@@ -15,7 +15,9 @@ export type Labels = Readonly<Record<string, string>>;
 export interface Selection {
   receiver: string;
   groupBy: string[];
+  groupWait: string;
   groupInterval: string;
+  repeatInterval: string;
   mute: string[];
   active: string[];
 }
@@ -165,6 +167,54 @@ function parseMatcher(value: string): { label: string; operator: string; value: 
   return { label: match![1]!, operator: match![2]!, value: match![3] ?? match![4]! };
 }
 
+// Alertmanager default route options; explicit descendant values override inherited values.
+const DEFAULT_SELECTION: Selection = {
+  receiver: '',
+  groupBy: [],
+  groupWait: '30s',
+  groupInterval: '5m',
+  repeatInterval: '4h',
+  mute: [],
+  active: [],
+};
+
+function optionsFor(node: Mapping, parent: Selection): Selection {
+  return {
+    receiver:
+      node['receiver'] === undefined ? parent.receiver : string(node['receiver'], 'receiver'),
+    groupBy:
+      node['group_by'] === undefined ? parent.groupBy : strings(node['group_by'], 'group_by'),
+    groupWait:
+      node['group_wait'] === undefined
+        ? parent.groupWait
+        : string(node['group_wait'], 'group_wait'),
+    groupInterval:
+      node['group_interval'] === undefined
+        ? parent.groupInterval
+        : string(node['group_interval'], 'group_interval'),
+    repeatInterval:
+      node['repeat_interval'] === undefined
+        ? parent.repeatInterval
+        : string(node['repeat_interval'], 'repeat_interval'),
+    mute: strings(node['mute_time_intervals'] ?? [], 'mute_time_intervals'),
+    active: strings(node['active_time_intervals'] ?? [], 'active_time_intervals'),
+  };
+}
+
+/** Include the root and intermediate/unselected nodes when checking effective grouping. */
+export function effectiveRoutes(config: AlertConfig): Selection[] {
+  const visit = (node: Mapping, parent: Selection): Selection[] => {
+    const options = optionsFor(node, parent);
+    return [
+      options,
+      ...list(node['routes'] ?? [], 'routes').flatMap((child) =>
+        visit(record(child, 'child route'), options),
+      ),
+    ];
+  };
+  return visit(config.route, DEFAULT_SELECTION);
+}
+
 /** Select routes before muting: a muted match still consumes the branch unless continue=true. */
 export function selected(config: AlertConfig, labels: Labels): Selection[] {
   const visit = (node: Mapping, parent: Selection): Selection[] => {
@@ -174,18 +224,7 @@ export function selected(config: AlertConfig, labels: Labels): Selection[] {
       return matcher.operator === '=' ? equal : !equal;
     });
     if (!matches) return [];
-    const options: Selection = {
-      receiver:
-        node['receiver'] === undefined ? parent.receiver : string(node['receiver'], 'receiver'),
-      groupBy:
-        node['group_by'] === undefined ? parent.groupBy : strings(node['group_by'], 'group_by'),
-      groupInterval:
-        node['group_interval'] === undefined
-          ? parent.groupInterval
-          : string(node['group_interval'], 'group_interval'),
-      mute: strings(node['mute_time_intervals'] ?? [], 'mute_time_intervals'),
-      active: strings(node['active_time_intervals'] ?? [], 'active_time_intervals'),
-    };
+    const options = optionsFor(node, parent);
     const out: Selection[] = [];
     for (const value of list(node['routes'] ?? [], 'routes')) {
       const child = record(value, 'child route');
@@ -195,13 +234,7 @@ export function selected(config: AlertConfig, labels: Labels): Selection[] {
     }
     return out.length > 0 ? out : [options];
   };
-  return visit(config.route, {
-    receiver: '',
-    groupBy: [],
-    groupInterval: '5m',
-    mute: [],
-    active: [],
-  });
+  return visit(config.route, DEFAULT_SELECTION);
 }
 
 function minutes(value: unknown): number {
