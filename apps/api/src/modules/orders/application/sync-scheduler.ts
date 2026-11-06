@@ -20,6 +20,16 @@ import {
 } from '../domain/sync-window.ts';
 import type { OrderSyncWindow, SyncAccount, SyncSchedulerDeps, SyncStream } from './sync-ports.ts';
 
+/**
+ * B1-04zzb (D10-741): the increment scheduler's deps with the order-source gate. orderSources says
+ * whether the platform's adapter can fetch orders as configured (UnionAdapter.orderSources); false:
+ * this round skips the platform's accounts without a window, a cursor move or an error. Optional
+ * only for test fakes: the worker assembly must provide it.
+ */
+export interface OrderSyncSchedulerDeps extends SyncSchedulerDeps {
+  readonly orderSources?: (platform: RegisteredPlatform) => boolean;
+}
+
 export const ORDER_SYNC_QUEUE = 'order-sync';
 export const ORDER_SYNC_JOB = 'window';
 
