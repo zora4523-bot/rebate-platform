@@ -120,7 +120,7 @@ it('[AC-B2-12f#13] 短信档 step-up：fund.writeoff 账号与超管不带令牌
   });
 });
 
-it('[AC-B2-12f#14] 请求体与 id：控制台不送金额，带 amount_fen 的请求体 → 20001（fields 含 body）；不存在的 id、别的 app 的候选单 → 20001 data.fields=[id]（不是 404）；都不写任何东西；之后空对象请求体按批准时余额核销', async () => {
+it('[AC-B2-12f#14] 请求体与 id：控制台不送金额，带 amount_fen 的请求体 → 20001（fields 含 amount_fen）；不存在的 id、别的 app 的候选单 → 20001 data.fields=[id]（不是 404）；都不写任何东西；之后空对象请求体按批准时余额核销', async () => {
   const f = fixture(s);
   const otherApp = newAppId();
   await withWriteoffAdmin(f, async (h) => {
@@ -132,7 +132,7 @@ it('[AC-B2-12f#14] 请求体与 id：控制台不送金额，带 amount_fen 的�
     const before = await everything(f);
     const foreignBefore = await everything(f, otherApp);
 
-    await schemaRefused(await h.approve(row.id, { amount_fen: 300 }), 'body');
+    await schemaRefused(await h.approve(row.id, { amount_fen: 300 }), 'amount_fen');
     await unknownCandidate(await h.approve(randomUUID()));
     await unknownCandidate(await h.approve(foreign.id));
     expect(await everything(f)).toEqual(before);
