@@ -615,7 +615,18 @@ it('[AC-B2-09t#35] 日界已有 paid_line_not_success 时优先结束，D+1 未�
   const queued = await jobs(f);
   f.send.mockClear();
   f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
-  await runLate(f, w.id);
+  // With waiting before reported, runLate reaches sendLatePaidCheck -> f.send -> pg-boss
+  // before the no-send assertion below. Waiting for that real send hid the regression behind
+  // the 60s test timeout. Fail at the forbidden port, before entering the queue/DB wait.
+  const send = f.send.getMockImplementation();
+  f.send.mockImplementation(async () => {
+    expect.fail('已有 paid_line_not_success，D+1 未跑也不得再次入队');
+  });
+  try {
+    await runLate(f, w.id);
+  } finally {
+    if (send !== undefined) f.send.mockImplementation(send);
+  }
   expect(f.send).not.toHaveBeenCalled();
   expect(await lateJobs(f)).toEqual([]);
   expect(await jobs(f)).toEqual(queued);
