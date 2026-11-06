@@ -13,6 +13,6 @@ export interface PriceSpecHintInput {
 }
 
 export function priceSpecHintFor(input: PriceSpecHintInput): PriceSpecHint {
-  void input;
-  throw new Error('NotImplemented: priceSpecHintFor');
+  // Strict comparison on purpose: a misread mode ('SKU', ' sku', null…) or platform ('JD') is not sku.
+  return input.platform === 'jd' && input.jdMode === 'sku' ? null : 'spec_uncertain';
 }
