@@ -1,11 +1,11 @@
-// B2-04zu rule tests on a real PostgreSQL (BR-FUND-04 ⑦, BR-TEXT-09; D10-719 ②, FU-B204ZF-CLOCK-SKEW):
-// the start of a run's next execution (app.settle_runs.part_started_at) must not fall behind what the
-// run already did, when the executor that publishes a rest runs on a clock that lags the worker that
-// finished a batch or credited an order. Each executor process injects its own Clock; the next rest
-// decides "did this execution credit anything" by comparing finished_at / credited_at / closed_at
-// with part_started_at, so a lagging publisher would count an earlier execution's work again and send
-// one more partial part (and one more CREDITED notification). BR-TEXT-09: CREDITED only for what was
-// credited, 0 笔不发.
+// B2-04zu rule tests on a real PostgreSQL (BR-FUND-04 ⑦, BR-TEXT-09; D10-719 ②, FU-B204ZF-CLOCK-SKEW),
+// carried into B2-04zy and judged by the count watermark (D10-726): when the executor that publishes
+// a rest runs on a clock that lags the worker that finished a batch or credited an order, the run
+// must not count an earlier execution's work again and send one more partial part (and one more
+// CREDITED notification). BR-TEXT-09: CREDITED only for what was credited, 0 笔不发. "Did this
+// execution credit anything" is the sum of app.settle_batches.credited_count over the run's batches
+// being greater than app.settle_runs.published_credited_count; no timestamp is compared
+// (part_started_at is still written, for audit only, and not asserted here).
 //
 // Layout of every case: two executors on the same database, each with its own FixedClock — worker Y
 // on the harness clock (the one the credit writes credited_at with) and worker X on a FixedClock
@@ -13,10 +13,11 @@
 // taobao batches: A (one order) finishes on Y; B (three orders) runs on X and is stopped by
 // settle.auto.enabled. The executors are built here (the frozen run-done kit's build() always uses the
 // harness clock); seeding, the credit, the switch map, resume (SB8) and the event reads come from
-// ../run-done/kit.ts unchanged.
+// ../run-done/kit.ts unchanged; the counters are read through ../run-credit-watermark/kit.ts.
 //
-// Each of the three sources of the clamp is on its own the greatest instant in one case, so an
-// implementation that leaves that source out publishes one more part on a zero-credit continue:
+// Each of three timestamps is on its own the latest instant in one case, so an implementation that
+// still compares any of them with the start of the execution publishes one more part on a
+// zero-credit continue:
 //   - order credited_at: AC#1 (B's first order is credited on X after A finished on Y);
 //   - batch finished_at: the finished_at case (A's order is credited, A finishes 20 s later, B's
 //     first execution credits nothing: its first item is skipped by a changed settlement seq);
@@ -24,12 +25,13 @@
 //     A finished, then stops; B's first execution on X credits nothing). Obligations and their
 //     beneficiary items are seeded with the batch-executor kit's beneficiaryItem(); the executors
 //     here get a beneficiary port that closes the obligation the way B2-04q does (status done,
-//     closed_by R5a, closed_ref = the item id, closed_at = that executor's own clock).
-// Boundary (separate case, for the rule-test review): once the start is clamped to an instant of
-// the faster worker, the slow worker may move the last batch to DONE with finished_at at or before
-// that start. Its run is then DONE by the batch states, and the credits of that execution must
-// still be announced (part=2 done, BR-TEXT-09); the other cases move the clock past the lag before
-// the final DONE and do not depend on this.
+//     closed_by R5a, closed_ref = the item id, closed_at = that executor's own clock). The credited
+//     beneficiary item counts in C's credited_count like an order item.
+// Boundary (separate case, for the rule-test review): the slow worker may move the last batch to
+// DONE with finished_at before instants the faster worker already wrote. Its run is then DONE by the
+// batch states, and the credits of that execution must still be announced (part=2 done,
+// BR-TEXT-09); the other cases move the clock past the lag before the final DONE and do not depend
+// on this.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
@@ -56,6 +58,13 @@ import {
   type Fixture,
   type SeededBatch,
 } from '../run-done/kit.ts';
+import {
+  creditedCount,
+  runCredited,
+  runState,
+  watermarkReady,
+  type RunState,
+} from '../run-credit-watermark/kit.ts';
 
 const p = databaseFixture(createTestDatabase);
 
@@ -209,28 +218,30 @@ async function delivered(
 interface RunRow {
   readonly part: number;
   readonly last_outcome: string | null;
-  readonly part_started_at: Date;
 }
 
 function runRow(f: Fixture, runId: string): Promise<RunRow | undefined> {
   return f.db
     .selectFrom('settle_runs')
-    .select(['part', 'last_outcome', 'part_started_at'])
+    .select(['part', 'last_outcome'])
     .where('app_id', '=', f.appId)
     .where('settle_run_id', '=', runId)
     .executeTakeFirst();
-}
-
-async function storedRun(f: Fixture, runId: string): Promise<RunRow> {
-  const row = await runRow(f, runId);
-  if (row === undefined) throw new Error('the run has no settle_runs row');
-  return row;
 }
 
 /** part and last_outcome of the run (part 0 and no outcome while there is no row). */
 async function published(f: Fixture, runId: string) {
   const row = await runRow(f, runId);
   return { part: row?.part ?? 0, last_outcome: row?.last_outcome ?? null };
+}
+
+/**
+ * The run row with its watermark, and the watermark equal to the sum of credited_count over the
+ * run's batches (D10-726: what was published is exactly what the batches counted).
+ */
+async function counted(f: Fixture, runId: string, state: RunState): Promise<void> {
+  expect(await runState(f, runId)).toEqual(state);
+  expect(await runCredited(f, runId)).toBe(state.watermark);
 }
 
 async function creditedAt(f: Fixture, o: SeededOrder): Promise<Date | null> {
@@ -338,38 +349,16 @@ async function opening(s: Awaited<ReturnType<typeof setUp>>): Promise<void> {
   expect(await f.runDone()).toStrictEqual([f.runEvent(runId, 1, 'partial', 2)]);
 }
 
-/** The lower bound part_started_at must keep (all instants in ms). */
-async function floorOf(
-  f: Fixture,
-  publisher: FixedClock,
-  batches: readonly SeededBatch[],
-  orders: readonly SeededOrder[],
-  obligations: readonly string[],
-): Promise<number> {
-  const instants = [publisher.now().getTime()];
-  for (const b of batches) {
-    const finished = (await f.stored(b)).finished_at;
-    if (finished !== null) instants.push(finished.getTime());
-  }
-  for (const o of orders) {
-    const credited = await creditedAt(f, o);
-    if (credited !== null) instants.push(credited.getTime());
-  }
-  for (const id of obligations) {
-    const closed = (await obligation(f, id)).closed_at;
-    if (closed !== null) instants.push(closed.getTime());
-  }
-  return Math.max(...instants);
-}
-
 it(
-  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 跨 worker 时钟落后不多发（订单 credited_at 单独为最大值）：批次 A 在 worker Y 上 DONE；批次 B 在时钟慢 Y 若干秒的 worker X 上入账一单后因 settle.auto.enabled 停住 → 恰一条 part=1 partial；开关恢复、续跑 B、处理下一单前开关再关、零入账回到 PARTIAL → 不发（A 与已入账的那单不算本次入账），run_done 仍只有 part=1，不出现 part=2；之后续跑到 DONE → 发 part=2 done',
+  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 跨 worker 时钟落后不多发（订单 credited_at 单独为最大值）：批次 A 在 worker Y 上 DONE；批次 B 在时钟慢 Y 若干秒的 worker X 上入账一单后因 settle.auto.enabled 停住 → 恰一条 part=1 partial（水位 2 = A 的 1 单 + B 的 1 单）；开关恢复、续跑 B、处理下一单前开关再关、零入账回到 PARTIAL → 不发（A 与已入账的那单不算本次入账：各批计数之和仍为 2、不大于水位），run_done 仍只有 part=1，不出现 part=2；之后续跑到 DONE → 发 part=2 done',
   async () => {
+    await watermarkReady(p.db);
     const s = await setUp('skew-zero', SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
     await opening(s);
     const partial = f.runEvent(runId, 1, 'partial', 2);
     expect(await f.status(a)).toBe('DONE');
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 2 });
     // 本例 credited_at 单独为最大值：B 第 1 单的入账晚于 A 的完成、A 那单的入账与发布方 X 的时钟。
     const publisherAt = x.clock.now().getTime();
     const creditedB = await creditedMs(f, nth(bOrders, 0));
@@ -384,9 +373,7 @@ it(
     await delivered(f, x, b, 'partial');
     expect(await f.runDone()).toStrictEqual([partial]);
     expect(await published(f, runId)).toEqual({ part: 1, last_outcome: 'partial' });
-    const start = (await storedRun(f, runId)).part_started_at.getTime();
-    expect(start).toBeGreaterThanOrEqual(creditedB);
-    expect(start).toBeGreaterThanOrEqual(publisherAt);
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 2 });
     await creditedOnce(f, nth(aOrders, 0));
     await creditedOnce(f, nth(bOrders, 0));
     await untouched(f, nth(bOrders, 1));
@@ -398,19 +385,22 @@ it(
     await f.resume(b);
     await delivered(f, x, b, 'done');
     expect(await f.runDone()).toStrictEqual([partial, f.runEvent(runId, 2, 'done', 2)]);
+    await counted(f, runId, { part: 2, last_outcome: 'done', watermark: 4 });
     for (const o of [...aOrders, ...bOrders]) await creditedOnce(f, o);
   },
   TIMEOUT,
 );
 
 it(
-  '[AC-B2-04zu#2][BR-FUND-04][BR-TEXT-09] 正常续跑仍发、只计本次入账：同上布局，part=1 partial 之后续跑 B 在 X 上真的入账了第 2 单再停住 → 发 part=2 partial；本次执行（part=1 起点之后、part=2 起点及之前）入账的只有第 2 单，A 的订单、A 的完成与 part=1 已入账的第 1 单都不在这次执行里',
+  '[AC-B2-04zu#2][BR-FUND-04][BR-TEXT-09] 正常续跑仍发、只计本次入账：同上布局，part=1 partial（水位 2）之后续跑 B 在 X 上真的入账了第 2 单再停住 → 发 part=2 partial，水位 3；两次水位之差 1 就是本次执行入账的第 2 单，A 的订单、A 的完成与 part=1 已入账的第 1 单都在上一个水位里（A 计数仍 1，B 计数 1 → 2）',
   async () => {
+    await watermarkReady(p.db);
     const s = await setUp('skew-more', SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
     await opening(s);
-    const first = await storedRun(f, runId);
-    expect(first).toMatchObject({ part: 1, last_outcome: 'partial' });
+    const first = await runState(f, runId);
+    expect(first).toEqual({ part: 1, last_outcome: 'partial', watermark: 2 });
+    expect([await creditedCount(f, a), await creditedCount(f, b)]).toEqual([1, 1]);
 
     f.switchBackOn();
     await f.resume(b);
@@ -420,23 +410,12 @@ it(
       f.runEvent(runId, 1, 'partial', 2),
       f.runEvent(runId, 2, 'partial', 2),
     ]);
-    const second = await storedRun(f, runId);
-    expect(second).toMatchObject({ part: 2, last_outcome: 'partial' });
+    await counted(f, runId, { part: 2, last_outcome: 'partial', watermark: 3 });
 
-    // 本次执行 = (part=1 起点, part=2 起点]：只含本次入账的第 2 单。
-    const from = first.part_started_at.getTime();
-    const to = second.part_started_at.getTime();
-    const counted: string[] = [];
-    for (const o of [...aOrders, ...bOrders]) {
-      const credited = await creditedAt(f, o);
-      if (credited !== null && credited.getTime() > from && credited.getTime() <= to) {
-        counted.push(o.orderId);
-      }
-    }
-    expect(counted).toEqual([nth(bOrders, 1).orderId]);
-    const finishedA = (await f.stored(a)).finished_at;
-    expect(finishedA).not.toBeNull();
-    expect((finishedA?.getTime() ?? 0) > from).toBe(false);
+    // 本次执行 = 两次水位之间：只含本次入账的第 2 单。
+    const second = await runState(f, runId);
+    expect(second.watermark - first.watermark).toBe(1);
+    expect([await creditedCount(f, a), await creditedCount(f, b)]).toEqual([1, 2]);
 
     await creditedOnce(f, nth(aOrders, 0));
     await creditedOnce(f, nth(bOrders, 0));
@@ -531,34 +510,34 @@ it(
 );
 
 it(
-  '[AC-B2-04zu#4][BR-FUND-04] 起点只来自注入时钟与已有数据：X 每次发布后直接读 settle_runs 行，part_started_at ≥ 本 run 已完成批次 finished_at 与已入账订单 credited_at 的最大值，且 ≥ 发布方 X 的 clock.now()，且不晚于测试里最快的注入时钟（part=1 partial、part=2 partial、part=3 done 三次都成立）',
+  '[AC-B2-04zu#4][BR-FUND-04] 水位只来自计数：X 每次发布后直接读 settle_runs 行，published_credited_count 等于本 run 各批 credited_count 之和（A 的 1 单加 B 已入账的单数：2、3、4），A 的计数一直是 1、B 的计数逐次加 1，与发布方 X 的时钟和任何时间戳无关（part=1 partial、part=2 partial、part=3 done 三次都成立）',
   async () => {
+    await watermarkReady(p.db);
     const s = await setUp('skew-floor', SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
     const orders = [...aOrders, ...bOrders];
-    async function clamped(part: number, outcome: 'done' | 'partial'): Promise<void> {
-      const row = await storedRun(f, runId);
-      expect(row).toMatchObject({ part, last_outcome: outcome });
-      const start = row.part_started_at.getTime();
-      expect(start).toBeGreaterThanOrEqual(await floorOf(f, x.clock, [a, b], orders, []));
-      expect(start).toBeGreaterThanOrEqual(x.clock.now().getTime());
-      expect(start).toBeLessThanOrEqual(f.clock.now().getTime());
+    async function marked(state: RunState): Promise<void> {
+      await counted(f, runId, state);
+      expect([await creditedCount(f, a), await creditedCount(f, b)]).toEqual([
+        1,
+        state.watermark - 1,
+      ]);
     }
 
     await opening(s);
-    await clamped(1, 'partial');
+    await marked({ part: 1, last_outcome: 'partial', watermark: 2 });
 
     f.switchBackOn();
     await f.resume(b);
     r.stopAfter(nth(bOrders, 1));
     await delivered(f, x, b, 'partial');
-    await clamped(2, 'partial');
+    await marked({ part: 2, last_outcome: 'partial', watermark: 3 });
 
     f.switchBackOn();
     f.clock.advanceMs(2 * SKEW_MS);
     await f.resume(b);
     await delivered(f, x, b, 'done');
-    await clamped(3, 'done');
+    await marked({ part: 3, last_outcome: 'done', watermark: 4 });
     for (const o of orders) await creditedOnce(f, o);
   },
   TIMEOUT,
@@ -591,8 +570,8 @@ async function staleSetUp(tag: string, lagMs: number) {
 /**
  * A credits its order on Y, the clock moves FINISH_GAP_MS on, A is DONE on Y (the run waits for B);
  * B starts on X, its first item is skipped and the switch goes off → PARTIAL with nothing credited;
- * part=1 partial is published by X for A's DONE. A.finished_at is then on its own the greatest
- * instant: after A's credit, after X's clock, and no order of B has credited_at.
+ * part=1 partial is published by X for A's credit (watermark 1). A.finished_at is then on its own
+ * the greatest instant: after A's credit, after X's clock, and no order of B has credited_at.
  */
 async function finishedOpening(s: Awaited<ReturnType<typeof staleSetUp>>) {
   const { f, r, x, y, a, b, runId, aOrders, bOrders } = s;
@@ -612,28 +591,26 @@ async function finishedOpening(s: Awaited<ReturnType<typeof staleSetUp>>) {
   expect(finished).toBeGreaterThan(await creditedMs(f, nth(aOrders, 0)));
   expect(finished).toBeGreaterThan(publisherAt);
   for (const o of bOrders) expect(await creditedAt(f, o)).toBeNull();
-  return { finished, publisherAt, fastAt: f.clock.now().getTime() };
+  return { finished };
 }
 
 it(
-  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 批次 finished_at 单独为最大值：A 那单在 Y 上入账、稍后 A 才在 Y 上 DONE；B 在时钟慢 Y 若干秒的 X 上首单因结算记录 seq 已变被跳过、随即因开关停住，零入账 → 恰一条 part=1 partial（计入的是 A 的完成）；开关恢复、续跑 B 零入账再停住 → 不发 part=2（夹紧漏取 finished_at、只取时钟与 credited_at 时会把 A 的完成再算一次），起点不早于 A.finished_at 与发布方 X 的时钟',
+  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 批次 finished_at 单独为最大值：A 那单在 Y 上入账、稍后 A 才在 Y 上 DONE；B 在时钟慢 Y 若干秒的 X 上首单因结算记录 seq 已变被跳过、随即因开关停住，零入账 → 恰一条 part=1 partial（计入的是 A 那单，水位 1）；开关恢复、续跑 B 零入账再停住 → 不发 part=2（拿 finished_at 与起点比较时会把 A 的完成再算一次），行仍为 part=1 水位 1，A 计数 1、B 计数 0',
   async () => {
+    await watermarkReady(p.db);
     const s = await staleSetUp('skew-finished', SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
-    const { finished, publisherAt, fastAt } = await finishedOpening(s);
+    await finishedOpening(s);
     const partial = f.runEvent(runId, 1, 'partial', 2);
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 1 });
 
     f.switchBackOn();
     await f.resume(b);
     r.switchOff();
     await delivered(f, x, b, 'partial');
     expect(await f.runDone()).toStrictEqual([partial]);
-    const row = await storedRun(f, runId);
-    expect(row).toMatchObject({ part: 1, last_outcome: 'partial' });
-    const start = row.part_started_at.getTime();
-    expect(start).toBeGreaterThanOrEqual(finished);
-    expect(start).toBeGreaterThanOrEqual(publisherAt);
-    expect(start).toBeLessThanOrEqual(fastAt);
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 1 });
+    expect([await creditedCount(f, a), await creditedCount(f, b)]).toEqual([1, 0]);
 
     expect(await f.status(a)).toBe('DONE');
     await creditedOnce(f, nth(aOrders, 0));
@@ -643,8 +620,9 @@ it(
 );
 
 it(
-  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 受益人补记 closed_at 单独为最大值：A 在 Y 上 DONE；稍后补记批次 C 在 Y 上完成一笔受益人义务（closed_at 取 Y 的时钟）后因开关停住为 PARTIAL；B 在时钟慢 Y 若干秒的 X 上首单被跳过、随即停住，零入账 → 恰一条 part=1 partial；开关恢复、续跑 B 零入账再停住 → 不发 part=2（夹紧漏取 closed_at、只取时钟、finished_at 与 credited_at 时会把 C 的那笔义务再算一次），起点不早于该义务的 closed_at',
+  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 受益人补记 closed_at 单独为最大值：A 在 Y 上 DONE；稍后补记批次 C 在 Y 上完成一笔受益人义务（closed_at 取 Y 的时钟）后因开关停住为 PARTIAL；B 在时钟慢 Y 若干秒的 X 上首单被跳过、随即停住，零入账 → 恰一条 part=1 partial（水位 2 = A 的 1 单 + C 的 1 笔补记）；开关恢复、续跑 B 零入账再停住 → 不发 part=2（拿 closed_at 与起点比较时会把 C 的那笔义务再算一次），行仍为 part=1 水位 2，A、C、B 计数为 1、1、0',
   async () => {
+    await watermarkReady(p.db);
     const f = await fixture(p.db);
     const r = rig(f);
     const groups = await f.orderGroups('skew-closed', [1, 3, 2]);
@@ -680,23 +658,23 @@ it(
     // closed_at 单独为最大值：晚于 A 的完成、A 那单的入账与发布方 X 的时钟；B 没有入账。
     const closed = await closedMs(f, first.beneficiaryCreditId);
     const publisherAt = x.clock.now().getTime();
-    const fastAt = f.clock.now().getTime();
     expect(closed).toBeGreaterThan(await finishedMs(f, a));
     expect(closed).toBeGreaterThan(await creditedMs(f, nth(aOrders, 0)));
     expect(closed).toBeGreaterThan(publisherAt);
     for (const o of bOrders) expect(await creditedAt(f, o)).toBeNull();
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 2 });
 
     f.switchBackOn();
     await f.resume(b);
     r.switchOff();
     await delivered(f, x, b, 'partial');
     expect(await f.runDone()).toStrictEqual([partial]);
-    const row = await storedRun(f, runId);
-    expect(row).toMatchObject({ part: 1, last_outcome: 'partial' });
-    const start = row.part_started_at.getTime();
-    expect(start).toBeGreaterThanOrEqual(closed);
-    expect(start).toBeGreaterThanOrEqual(publisherAt);
-    expect(start).toBeLessThanOrEqual(fastAt);
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 2 });
+    expect([
+      await creditedCount(f, a),
+      await creditedCount(f, c),
+      await creditedCount(f, b),
+    ]).toEqual([1, 1, 0]);
 
     expect(await f.status(c)).toBe('PARTIAL');
     expect(await f.item(c, first.beneficiaryCreditId)).toMatchObject({ result: 'credited' });
@@ -717,8 +695,9 @@ it(
 );
 
 it(
-  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 边界（供规则测试评审判断）：夹紧后慢时钟 worker 很快把最后一批置 DONE、finished_at 不晚于起点，仍按批次状态发 done——布局同 finished_at 一例而 X 落后更多；零入账续跑不发 part=2 之后，开关恢复、续跑 B 在 X 上入账余下两单并 DONE（不先让时钟走过偏差，X 此刻仍早于 A.finished_at）→ 恰发 part=2 done，run_done 共两条',
+  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 边界（供规则测试评审判断）：慢时钟 worker 把最后一批置 DONE、finished_at 早于快 worker 已写下的时刻，仍按批次状态与计数发 done——布局同 finished_at 一例而 X 落后更多；零入账续跑不发 part=2 之后，开关恢复、续跑 B 在 X 上入账余下两单并 DONE（不先让时钟走过偏差，X 此刻仍早于 A.finished_at）→ 恰发 part=2 done，run_done 共两条，水位 1 → 3',
   async () => {
+    await watermarkReady(p.db);
     const s = await staleSetUp('skew-boundary', WIDE_SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
     const { finished } = await finishedOpening(s);
@@ -729,8 +708,9 @@ it(
     r.switchOff();
     await delivered(f, x, b, 'partial');
     expect(await f.runDone()).toStrictEqual([partial]);
+    await counted(f, runId, { part: 1, last_outcome: 'partial', watermark: 1 });
 
-    // 续跑到 DONE：X 完成 B 的时刻仍早于 A 的完成，也就不晚于夹紧后的起点。
+    // 续跑到 DONE：X 完成 B 的时刻仍早于 A 的完成。
     f.switchBackOn();
     await f.resume(b);
     await delivered(f, x, b, 'done');
@@ -738,6 +718,7 @@ it(
     expect(await f.status(a)).toBe('DONE');
     expect(await f.runDone()).toStrictEqual([partial, f.runEvent(runId, 2, 'done', 2)]);
     expect(await published(f, runId)).toEqual({ part: 2, last_outcome: 'done' });
+    await counted(f, runId, { part: 2, last_outcome: 'done', watermark: 3 });
 
     await creditedOnce(f, nth(aOrders, 0));
     await untouched(f, nth(bOrders, 0));
