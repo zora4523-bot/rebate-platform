@@ -39922,10 +39922,11 @@ components:
             「¥x 起」 (amount per BR-TEXT-10, e.g. 券后 ¥29.9 起) with no further note.
             spec_uncertain: the spec the product-level price belongs to cannot be determined, so
             `spec_min_price_note` (规格以下单页为准) is shown beside the price (on product detail
-            in the coupon tag row, BR-PRICE-04 细则「商品详情的券标签」). null: neither. Carried by
-            every card response (BR-PROD-04: beside the price on cards and on product detail;
-            D10-688); list-type cards give null until the server-side judgement (S-19) covers them.
-            Absent is read as null.
+            in the coupon tag row, BR-PRICE-04 细则「商品详情的券标签」). null: only when the price is
+            known to belong to this product / spec (e.g. a JD key in sku mode); not knowing is
+            spec_uncertain, never null (D10-713). Carried by every card response, list-type and
+            detail alike, from one server judgement (BR-PROD-04: beside the price on cards and on
+            product detail; D10-688). Absent is read as null.
           enum:
             - price_from
             - spec_uncertain
