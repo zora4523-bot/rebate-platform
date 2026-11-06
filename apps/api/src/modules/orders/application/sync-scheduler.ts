@@ -6,6 +6,9 @@
 // moved up first, also when the stream has no row yet: the next round then starts inside the
 // tolerance of clampedIncrementStartMs and sends the same window, or nothing new. A lost
 // compare-and-set sends nothing this round.
+// B1-04zzb (D10-741 ③): before every other gate, a platform whose adapter reports no order source
+// (deps.orderSources) is skipped for the round: no queryable-account lookup, no window, no cursor
+// move (not even the look-back clamp), no error, one info line per platform and round.
 import type { RegisteredPlatform } from '../../union/index.ts';
 import { orderQueryLookbackMs } from '../domain/platform-rules/query-lookback.ts';
 import {
@@ -38,7 +41,7 @@ export const ORDER_SYNC_JOB = 'window';
  * the first failure is rethrown after the round so the caller logs it.
  */
 export async function scheduleOrderSync(
-  deps: SyncSchedulerDeps,
+  deps: OrderSyncSchedulerDeps,
   platforms: readonly RegisteredPlatform[] = scheduledPlatforms(),
 ): Promise<void> {
   const accounts = await deps.access.listEnabledAccounts();
@@ -62,10 +65,22 @@ export async function scheduleOrderSync(
     }
     return id;
   };
+  const sourced = new Map<RegisteredPlatform, boolean>();
+  const hasOrderSource = (p: RegisteredPlatform): boolean => {
+    let has = sourced.get(p);
+    if (has === undefined) {
+      has = deps.orderSources?.(p) ?? true;
+      sourced.set(p, has);
+      if (!has) deps.logger?.info({ platform: p }, 'order_sync_skipped_no_order_source');
+    }
+    return has;
+  };
   let failure: { error: unknown } | undefined;
   for (const account of accounts) {
     if (!platforms.includes(account.platform)) continue;
+    if (INCREMENT_WINDOW_CAP_MS[account.platform] === undefined) continue;
     try {
+      if (!hasOrderSource(account.platform)) continue;
       await scheduleAccount(deps, account, circuitOpen, queryableAccount);
     } catch (error) {
       deps.logger?.error(
@@ -176,7 +191,7 @@ export interface OrderSyncScheduler {
 }
 
 export function createOrderSyncScheduler(
-  deps: SyncSchedulerDeps,
+  deps: OrderSyncSchedulerDeps,
   config: SyncIntervalConfig,
 ): OrderSyncScheduler {
   return {
@@ -192,7 +207,7 @@ export function createOrderSyncScheduler(
 }
 
 function startLoop(
-  deps: SyncSchedulerDeps,
+  deps: OrderSyncSchedulerDeps,
   config: SyncIntervalConfig,
   platform: RegisteredPlatform,
 ): { stop(): Promise<void> } {
