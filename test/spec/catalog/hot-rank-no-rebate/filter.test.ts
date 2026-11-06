@@ -124,9 +124,11 @@ it('[AC-B1-28o#1][BR-PRICE-08] 属性：任意无返利模式与页号（上游�
         const data = await f.run(pageNo === 1 ? {} : { cursor: cursorFor(pageNo) });
 
         const kept = numbers.filter((_n, index) => !dropped[index]);
+        checked += 1;
         expect(rows(data)).toEqual(listed('c', kept));
         expect(f.pageNos()).toEqual([pageNo]);
-        checked += 1;
+        expect(data.next_cursor).toBeNull();
+        return true;
       },
     ),
     propParams(),

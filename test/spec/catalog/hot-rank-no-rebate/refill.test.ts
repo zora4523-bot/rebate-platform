@@ -43,6 +43,67 @@ it('[AC-B1-28o#2][BR-PRICE-08] 分页例：第 1 页滤掉 6 个且上游有更�
   await assertSchema(data, 'HotRankData');
 });
 
+it('[AC-B1-28o#2][BR-PRICE-08] 第 1 页 20 件对当前用户全是无返利、上游有更多：过滤后为空也要补拉第 2 页，返回第 2 页 20 条（名次 21–40），游标 page_no=3', async () => {
+  const f = noRebateFixture();
+  f.setPage(1, series('p1', PAGE_SIZE, 1), true);
+  f.setPage(2, series('p2', PAGE_SIZE, 21), true);
+  f.setPage(3, series('p3', PAGE_SIZE, 41), false);
+  f.noRebate(...names('p1', span(1, 20)));
+
+  const data = await f.run();
+
+  expect(f.pageNos()).toEqual([1, 2]);
+  expect(data.items).toHaveLength(PAGE_SIZE);
+  expect(rows(data)).toEqual(listed('p2', span(21, 40)));
+  expect(claimsOf(data.next_cursor)).toEqual(claimsFor(3));
+  await assertSchema(data, 'HotRankData');
+});
+
+it('[AC-B1-28o#2][AC-B1-28o#8][BR-PRICE-08] 补拉页带 positions：补拉条目的名次 = (2-1)*20 + 补拉页自己的位次 + 1，不按数组下标编号', async () => {
+  const f = noRebateFixture();
+  f.setPage(1, series('p1', PAGE_SIZE, 1), true);
+  f.setPage(2, series('p2', 6, 21), true, [0, 2, 4, 6, 8, 10]);
+  f.setPage(3, series('p3', PAGE_SIZE, 41), false);
+  f.noRebate(...names('p1', PAGE_1_DROPPED));
+
+  const data = await f.run();
+
+  expect(f.pageNos()).toEqual([1, 2]);
+  expect(data.items).toHaveLength(PAGE_SIZE);
+  expect(rows(data)).toEqual([
+    ...listed('p1', PAGE_1_KEPT),
+    [21, 'synthetic-p2-21', '21件'],
+    [23, 'synthetic-p2-22', '22件'],
+    [25, 'synthetic-p2-23', '23件'],
+    [27, 'synthetic-p2-24', '24件'],
+    [29, 'synthetic-p2-25', '25件'],
+    [31, 'synthetic-p2-26', '26件'],
+  ]);
+  expect(claimsOf(data.next_cursor)).toEqual(claimsFor(3));
+});
+
+it('[AC-B1-28o#2][AC-B1-28o#8][BR-PRICE-08] 补拉页带 positions 且自身也有被滤掉的：按原顺序取前几条有返利的，名次仍按补拉页的位次', async () => {
+  const f = noRebateFixture();
+  f.setPage(1, series('p1', PAGE_SIZE, 1), true);
+  f.setPage(2, series('p2', 10, 21), false, [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]);
+  f.noRebate(...names('p1', PAGE_1_DROPPED));
+  f.noRebate(...names('p2', [22, 25]));
+
+  const data = await f.run();
+
+  expect(f.pageNos()).toEqual([1, 2]);
+  expect(rows(data)).toEqual([
+    ...listed('p1', PAGE_1_KEPT),
+    [22, 'synthetic-p2-21', '21件'],
+    [26, 'synthetic-p2-23', '23件'],
+    [28, 'synthetic-p2-24', '24件'],
+    [32, 'synthetic-p2-26', '26件'],
+    [34, 'synthetic-p2-27', '27件'],
+    [36, 'synthetic-p2-28', '28件'],
+  ]);
+  expect(data.next_cursor).toBeNull();
+});
+
 it('[AC-B1-28o#2][BR-PRICE-08] 游标只记上游页码：接着取的是上游第 3 页（名次 41 起），补拉页没下发的条目不再出现', async () => {
   const f = noRebateFixture();
   f.setPage(1, series('p1', PAGE_SIZE, 1), true);
