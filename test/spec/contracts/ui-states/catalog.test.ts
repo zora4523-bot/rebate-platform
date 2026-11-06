@@ -81,7 +81,8 @@ it('[AC-CT-09s#1] 每行字段齐全，取值都在约定的枚举内', () => {
       timeout === null,
     );
     if (item['on_timeout'] !== null) {
-      expect(['read_timeout', 'load_failed'], `${label}.on_timeout`).toContain(item['on_timeout']);
+      // 08 表 C state.loading 行：加载态到时长上限仍没有结果转加载失败（第 2 次收紧，不再接受 read_timeout）。
+      expect(item['on_timeout'], `${label}.on_timeout`).toBe('load_failed');
     }
     const refs = list(item['refs'], `${label}.refs`);
     expect(refs.length, `${label}.refs 不能为空`).toBeGreaterThan(0);
@@ -103,12 +104,13 @@ it('[AC-CT-09s#1] id 与 name 各自唯一，13 个必有状态都在', () => {
   }
 });
 
-it('[AC-CT-09s#6] 首次加载有时长上限：timeout_ms 为正整数，到时转入 read_timeout 或 load_failed', () => {
+it('[AC-CT-09s#6] 首次加载有时长上限：timeout_ms 为正整数，到时转入 load_failed（08 表 C state.loading 行）', () => {
   const item = row('first_load');
   const timeout = item['timeout_ms'];
   expect(Number.isSafeInteger(timeout), 'first_load.timeout_ms 为整数').toBe(true);
   expect(timeout as number).toBeGreaterThan(0);
-  expect(['read_timeout', 'load_failed']).toContain(item['on_timeout']);
+  // 08 表 C：加载态到时仍没有结果「转下一行的加载失败」，取 state.load_failed.desc，不转读超时行。
+  expect(item['on_timeout'], 'first_load.on_timeout').toBe('load_failed');
   // 转入的目标行确实在目录里。
   expect(states().map((other) => other['name'])).toContain(item['on_timeout']);
 });

@@ -127,26 +127,42 @@ it('[AC-CT-09s#3] offline_no_cache：ErrorState(network)，net.unavailable / net
   expect(item['kind']).toBe('network');
 });
 
-it('[AC-CT-09s#3] offline_with_cache：显示旧数据并以 NoticeBar 附 net.stale_data', () => {
+it('[AC-CT-09s#3] offline_with_cache：显示旧数据并以 NoticeBar 附 net.stale_data，提示条上有重试入口 state.retry', () => {
   const item = row('offline_with_cache');
   expect(item['component']).toBe('NoticeBar');
   expect(item['kind']).toBeNull();
   expect(textKeysOf(item)).toContain('net.stale_data');
   expect(textKeysOf(item)).not.toContain('net.unavailable');
+  // 08 表 C state.retry 行：提示条上的重试入口用 state.retry。
+  const entries = actions(item);
+  expect(entries.length, 'offline_with_cache 至少有一个重试入口').toBeGreaterThan(0);
+  for (const action of entries) {
+    expect(action['key'], 'offline_with_cache 的按钮只用 state.retry').toBe('state.retry');
+  }
 });
 
-it('[AC-CT-09s#3] write_unknown：Toast 轻提示 state.timeout，重试沿用同一幂等键，注明三类场景键例外', () => {
+it('[AC-CT-09s#3] write_unknown：Toast 轻提示 state.timeout，不自动重发、手动重试沿用同一幂等键，注明 90003 与三类场景键例外', () => {
   const item = row('write_unknown');
   expect(item['component']).toBe('Toast');
   expect(item['kind']).toBeNull();
   expect(textKeysOf(item)).toContain('state.timeout');
-  expect(retry(item)['idempotency']).toBe('same_key');
-  expect(retry(item)['mode']).not.toBe('none');
+  // 结果未知的写请求不自动重发，重试交给用户，沿用同一幂等键（08 表 C state.timeout 行、规划/03 §4.2）。
+  expect(retry(item)['mode'], 'write_unknown.retry.mode').toBe('manual');
+  expect(retry(item)['idempotency'], 'write_unknown.retry.idempotency').toBe('same_key');
   const notes = `${String(item['trigger'])}\n${JSON.stringify(item['refs'])}`;
+  // App 内 H5 的桥调用返回 90003 同此（08 表 C state.timeout 行）。
+  expect(notes, 'write_unknown 的 trigger 或 refs 须注明桥调用 90003').toContain('90003');
   for (const scene of ['pending_confirm.', 'buy.timeout', 'login.network_retry']) {
     expect(notes, `write_unknown 的 trigger 或 refs 须注明 ${scene} 例外`).toContain(scene);
   }
 });
+
+// refs 里含 BR-TEXT-10（不把 BR-TEXT-100 之类误认为命中）。
+const brText10 = /(^|[^0-9A-Za-z-])BR-TEXT-10(?![0-9])/u;
+function citesBrText10(item: Obj): boolean {
+  const refs = Array.isArray(item['refs']) ? (item['refs'] as unknown[]) : [];
+  return refs.some((entry) => typeof entry === 'string' && brText10.test(entry));
+}
 
 it('[AC-CT-09s#3] value_missing：Inline 显示「—」（不进字典），读屏读 state.value_missing.a11y', () => {
   const item = row('value_missing');
@@ -159,12 +175,14 @@ it('[AC-CT-09s#3] value_missing：Inline 显示「—」（不进字典），读
   expect(announce(item)['mode']).not.toBe('none');
   // 「—」（U+2014）是格式规则，不作为任何字典键的取值。
   expect(Object.values(texts())).not.toContain('—');
+  expect(citesBrText10(item), 'value_missing.refs 须含 BR-TEXT-10').toBe(true);
 });
 
 it('[AC-CT-09s#3] value_missing_block：整块进 ErrorState(load_failed)，用加载失败一组与主按钮 state.retry', () => {
   const item = row('value_missing_block');
   expectErrorState(item, 'state.load_failed.title', 'state.load_failed.desc');
   expect(item['kind']).toBe('load_failed');
+  expect(citesBrText10(item), 'value_missing_block.refs 须含 BR-TEXT-10').toBe(true);
 });
 
 it('[AC-CT-09s#3] empty：EmptyState 标题 state.empty.default，没有数据不是加载失败，不配重试', () => {
@@ -184,15 +202,22 @@ it('[AC-CT-09s#3] page_maintenance：页面维护用 web_page.maintenance', () =
   expect(textKeysOf(item)).toContain('web_page.maintenance');
 });
 
-it('[AC-CT-09s#3] platform_maintenance：平台维护用 error.50301 及表 B 子键', () => {
+it('[AC-CT-09s#3] platform_maintenance：平台转链 / 联盟场景的 50301 用 error.50301[.<reason>]，核验场景按表 B 场景键另行处理', () => {
   const item = row('platform_maintenance');
   if (item['component'] === 'ErrorState') expect(item['kind']).toBe('maintenance');
-  const keys = textKeysOf(item).map(String);
-  const pinned = keys.some((key) => key === 'error.50301' || key.startsWith('error.50301['));
-  const generic =
-    keys.includes('error.<code>[.<reason>]') &&
-    `${String(item['trigger'])}\n${JSON.stringify(item['refs'])}`.includes('50301');
-  expect(pinned || generic, 'platform_maintenance 须取 error.50301[.<reason>]').toBe(true);
+  const desc = item['desc_key'];
+  const trigger = String(item['trigger']);
+  // 只接受模式串（带表 B 子键），不接受裸 error.50301。
+  const pinned = desc === 'error.50301[.<reason>]';
+  const generic = desc === 'error.<code>[.<reason>]' && trigger.includes('50301');
+  expect(pinned || generic, 'platform_maintenance.desc_key 须为 error.50301[.<reason>]').toBe(true);
+  // 08 表 B：50301「维护中」句说的是平台转链；实名、银行卡核验的 50301 用场景键 realname_vendor、
+  // bank_vendor 及其回落，不用平台维护句。
+  expect(trigger, 'platform_maintenance.trigger 限定平台转链 / 联盟场景').toMatch(/转链|联盟/u);
+  expect(trigger, 'platform_maintenance.trigger 须写明 realname_vendor 例外').toContain(
+    'realname_vendor',
+  );
+  expect(trigger, 'platform_maintenance.trigger 须写明 bank_vendor 例外').toContain('bank_vendor');
 });
 
 it('[AC-CT-09s#3] force_update：ForceUpdate 强更页用 error.10405', () => {
