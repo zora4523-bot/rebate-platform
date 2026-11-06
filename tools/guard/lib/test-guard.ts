@@ -626,16 +626,77 @@ const PROP_TIMEOUT_FIX = 'propParams() 的用例须写显式超时 ≥ 900_000�
 
 // A call of propParams(): plain, spread (`...propParams()`) or through a namespace
 // (`testing.propParams()`); a name that only ends in propParams is not.
-const PROP_PARAMS_CALL = /(?<![\w$])propParams\s*\(/;
+const PROP_PARAMS_CALL = /^propParams\s*\(/;
 
-/** Whether `text` calls propParams() (directly, as an argument, spread into an object). */
+/**
+ * Whether `text` calls propParams() (directly, as an argument, spread into an object), outside
+ * comments, strings and the static parts of template literals; a call inside a template's `${…}`
+ * counts (Codex r1 S2). Text that cannot be read (an unterminated literal): read as is, so a call
+ * is never missed.
+ */
 function callsPropParams(text: string): boolean {
-  return PROP_PARAMS_CALL.test(text);
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] ?? '';
+    if (c === '`') {
+      // The static parts are skipped, each `${…}` is searched on its own.
+      let j = i + 1;
+      for (; j < text.length && text[j] !== '`'; j++) {
+        if (text[j] === '\\') {
+          j++;
+        } else if (text[j] === '$' && text[j + 1] === '{') {
+          const end = skipBalanced(text, j + 1);
+          if (end === -1) return /(?<![\w$])propParams\s*\(/.test(text.slice(j + 2));
+          if (callsPropParams(text.slice(j + 2, end - 1))) return true;
+          j = end - 1;
+        }
+      }
+      if (j >= text.length) return /(?<![\w$])propParams\s*\(/.test(text.slice(i));
+      i = j;
+      continue;
+    }
+    const end = skipTrivia(text, i);
+    if (end === -1) return /(?<![\w$])propParams\s*\(/.test(text.slice(i));
+    if (end !== i) {
+      i = end - 1;
+      continue;
+    }
+    if (
+      c === 'p' &&
+      !/[\w$]/.test(text[i - 1] ?? '') &&
+      PROP_PARAMS_CALL.test(text.slice(i, i + 40))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
-/** The number of a number literal such as `900_000`, or null. */
+/** `value` without the whitespace and comments around it (Codex r1 S2: a block comment after `900_000`). */
+function withoutComments(value: string): string {
+  let out = value.trim();
+  for (let changed = true; changed;) {
+    changed = false;
+    const lead = /^(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*(?:\n|$))\s*/.exec(out);
+    if (lead !== null && lead[0] !== '') {
+      out = out.slice(lead[0].length);
+      changed = true;
+    }
+    const block = /\s*\/\*(?:(?!\*\/)[\s\S])*\*\/$/.exec(out);
+    const line = /\s*\/\/[^\n'"`]*$/.exec(out);
+    const trail = block ?? line;
+    if (trail !== null && trail[0] !== '') {
+      out = out.slice(0, out.length - trail[0].length);
+      changed = true;
+    }
+    out = out.trim();
+  }
+  return out;
+}
+
+/** The number of a number literal such as `900_000` (comments around it ignored), or null. */
 function numberLiteral(value: string): number | null {
-  return /^\d+(?:_\d+)*$/.test(value) ? Number(value.replace(/_/g, '')) : null;
+  const bare = withoutComments(value);
+  return /^\d+(?:_\d+)*$/.test(bare) ? Number(bare.replace(/_/g, '')) : null;
 }
 
 /** Why the explicit timeout argument `arg` is not enough, or null when it is. */
@@ -644,7 +705,7 @@ function timeoutProblem(
   arg: { from: number; to: number } | undefined,
 ): string | null {
   if (arg === undefined) return 'no timeout argument';
-  const value = text.slice(arg.from, arg.to).trim();
+  const value = withoutComments(text.slice(arg.from, arg.to));
   const n = numberLiteral(value);
   if (n !== null) return n >= PROP_TIMEOUT_MIN ? null : `the timeout ${value} is too small`;
   if (text[arg.from] !== '{') return `the timeout \`${value}\` is not a number literal`;
@@ -656,7 +717,7 @@ function timeoutProblem(
     const property = text.slice(partStart(text, from, to), to).trim();
     if (property.startsWith('...')) return 'the options object spreads another object';
     const m = /^(?:timeout|'timeout'|"timeout")\s*:\s*([\s\S]*)$/.exec(property);
-    if (m !== null) timeout = (m[1] ?? '').trim();
+    if (m !== null) timeout = withoutComments(m[1] ?? '');
   }
   if (timeout === null) return 'the options object has no timeout';
   const t = numberLiteral(timeout);

@@ -418,3 +418,35 @@ describe('[CT-06zzzm] prop-timeout: propParams() tests need an explicit timeout 
     expect(grown?.message).toBe(`${FIX} (no timeout argument)`);
   });
 });
+
+describe('[CT-06zzzm] Codex r1: comments and strings, commented timeouts', () => {
+  const FILE = 'test/spec/demo/prop.test.ts';
+  const FIX = 'propParams() 的用例须写显式超时 ≥ 900_000：补 `}, 900_000);`，见 D10-750';
+  const found = (text: string) =>
+    propTimeoutFindings(FILE, text, null).map((f) => [f.line, f.message]);
+
+  it('[CT-06zzzm] propParams() in a comment or a string is no call; inside ${…} of a template it is', () => {
+    expect(found(fx.propFile(fx.PROP_IN_COMMENT))).toEqual([]);
+    expect(found(fx.propFile(fx.PROP_IN_STRING))).toEqual([]);
+    expect(found(fx.propFile(fx.PROP_IN_INTERPOLATION))).toEqual([
+      [4, `${FIX} (no timeout argument)`],
+    ]);
+  });
+
+  it('[CT-06zzzm] a timeout with comments around it passes; a commented one below the minimum still fails', () => {
+    for (const tail of [
+      ', 900_000 /* 高次数运行 */',
+      ', /* 高次数运行 */ 900_000',
+      ', 900_000 // 高次数运行\n',
+      ', { timeout: 900_000 /* 高次数运行 */ }',
+      ', { /* 高次数 */ timeout: /* 运行 */ 900_000 }',
+    ]) {
+      expect(found(fx.propFile(fx.propBlock('[AC-1] p', tail))), tail).toEqual([]);
+    }
+    for (const tail of [', 60_000 /* 高次数运行 */', ', { timeout: 60_000 /* 高次数运行 */ }']) {
+      expect(found(fx.propFile(fx.propBlock('[AC-1] p', tail))), tail).toEqual([
+        [4, `${FIX} (the timeout 60_000 is too small)`],
+      ]);
+    }
+  });
+});

@@ -137,3 +137,22 @@ export const PROP_CONCURRENT = [
   '  await fc.assert(fc.asyncProperty(fc.nat(), async (n) => n >= 0), propParams());',
   '}, 899_999);',
 ].join('\n');
+// Codex r1 S2 (CT-06zzzm): the name in a comment or a string is no call; inside `${…}` it is.
+export const PROP_IN_COMMENT = [
+  "it('[AC-1] comment', () => {",
+  '  // 不需要 propParams()，这里只跑一次',
+  '  /* propParams() 也不要 */',
+  '  expect(1).toBe(1);',
+  '});',
+].join('\n');
+export const PROP_IN_STRING = [
+  "it('[AC-1] string', () => {",
+  '  expect(\'propParams()\').toBe("propParams()");',
+  '  expect(`propParams() is ${1}`).toBeTruthy();',
+  '});',
+].join('\n');
+export const PROP_IN_INTERPOLATION = [
+  "it('[AC-1] interpolation', () => {",
+  '  expect(`${JSON.stringify(propParams())}`).toBeTruthy();',
+  '});',
+].join('\n');
