@@ -3198,7 +3198,9 @@ it('[CT-06zzzk] a table that is no literal, a title that cannot be expanded, a t
     ],
     [
       'a modifier',
-      "it.skip.each(['14'])('[AC-45] closed with %s', async (code) => { expect(code).toBe(code); });",
+      // Split so the repository's own test-guard (no-skip-only) does not read the fixture as a skip.
+      'it.' +
+        "skip.each(['14'])('[AC-45] closed with %s', async (code) => { expect(code).toBe(code); });",
       '[AC-45] closed with 14',
       /a modifier/,
     ],
