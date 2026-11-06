@@ -221,6 +221,33 @@ export interface UnionItemDetail extends UnionItem {
    * upstream order, 1–9 entries; the main image is neither added nor removed. Absent when empty.
    */
   readonly image_urls?: readonly string[];
+  /**
+   * B1-04zzm (S-09 S09c, D10-736): end of the selected coupon (the one coupon_fen comes from),
+   * ISO 8601 with +08:00. Only when coupon_fen > 0 and the union gave its end time; absent
+   * otherwise. Pinduoduo coupon_end_time (seconds), jd the selected couponList entry's useEndTime
+   * (milliseconds); Taobao not yet (D10-736 ⑤).
+   */
+  readonly coupon_end_at?: string;
+  /** B1-04zzm: the union's sales text as given, non-empty (Pinduoduo sales_tip only). */
+  readonly sales_text?: string;
+  /** B1-04zzm: shop logo (Pinduoduo mall_img_url only), same check as one normalizeItemImages entry. */
+  readonly shop_logo?: string;
+  /**
+   * B1-04zzm: shop scores as the union gave them, each key at most once, values non-empty and
+   * unchanged. Pinduoduo desc_txt / serv_txt / lgst_txt; jd only shopInfo.shopLevel as `level`.
+   */
+  readonly shop_scores?: readonly UnionShopScore[];
+  /** B1-04zzm: the product side's shop id as given (Pinduoduo mall_id, jd shopInfo.shopId). */
+  readonly shop_ref?: string;
+}
+
+/** B1-04zzm: key of one shop score (contracts ProductShopScore.key). */
+export type UnionShopScoreKey = components['schemas']['ProductShopScore']['key'];
+
+/** B1-04zzm: one shop score of a union item detail. */
+export interface UnionShopScore {
+  readonly key: UnionShopScoreKey;
+  readonly value: string;
 }
 
 /** Domain data, never an invented upstream response format. Percent is e.g. "12.34". */
