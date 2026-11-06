@@ -157,7 +157,10 @@ export { LedgerDailyCheckModule } from './daily-check.module.ts';
 export type { LedgerDailyCheckWorkerOptions } from './daily-check.module.ts';
 // B2-12f: BR-FUND-12 bad debt write-off candidates (worker entry) and their ports.
 export { LedgerBadDebtWriteoffModule } from './bad-debt-writeoff.module.ts';
-export type { LedgerBadDebtWriteoffWorkerOptions } from './bad-debt-writeoff.module.ts';
+export type {
+  LedgerBadDebtWriteoffAdminOptions,
+  LedgerBadDebtWriteoffWorkerOptions,
+} from './bad-debt-writeoff.module.ts';
 export type {
   BadDebtThresholds,
   BadDebtWriteoffPorts,
