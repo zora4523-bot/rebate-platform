@@ -121,7 +121,7 @@ tags:
   - name: admin-fund-ledger
     description: Admin platform fund ledger — the union collection entry and its whole-record reversal (permission point fund.cash_entry, totp step-up), the list of union collection records and the fund ledger overview, the last two read only (permission point fund.view; 01 F-ADM-08, 04 §3.2 union_receipts, §11; BR-FUND-20, BR-WDR-18). The entry of the enterprise Alipay balance W belongs to the payout console (design/specs/admin-payouts.md).
   - name: admin-product-feedbacks
-    description: Admin product feedback records — the feedback users and guests sent from the product detail page, page by page with filters, read only (permission point feedback.view; 01 F-PROD-15, 04 §11.1; BR-ID-30 细则「商品反馈记录」).
+    description: Admin product feedback records — the feedback users and guests sent from the product detail page, page by page with filters, read only (permission point feedback.view; 01 F-PROD-15; BR-ID-30 细则「商品反馈记录」; 编排 D10-757（S-16；04 §11.1 权限点与 §6.3 后台查看接口待编排回写）).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -28967,8 +28967,8 @@ paths:
       description: |
         The product feedback records users and guests sent from the product detail page
         (POST /v1/products/{product_key}/feedback; 01 F-PROD-15; BR-ID-30 细则「商品反馈记录」;
-        04 §11.1; S-16), for operations to check prices, rebates and product information.
-        Permission point `feedback.view` (04 §11.1), read only, no step-up; lacking it is 10403
+        编排 D10-757（S-16；04 §11.1 权限点与 §6.3 后台查看接口待编排回写）), for operations to check prices, rebates and product information.
+        Permission point `feedback.view` (编排 D10-757), read only, no step-up; lacking it is 10403
         with `data.reason=admin_permission_denied`. Reading does not write an audit record.
         Lists only the console's app records; records of other apps never appear.
         Feedbacks of users whose account deletion completed have been deleted (BR-ID-28) and never appear.

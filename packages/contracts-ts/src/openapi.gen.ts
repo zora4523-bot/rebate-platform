@@ -10433,8 +10433,8 @@ export interface paths {
          * Product feedback records, newest first
          * @description The product feedback records users and guests sent from the product detail page
          *     (POST /v1/products/{product_key}/feedback; 01 F-PROD-15; BR-ID-30 细则「商品反馈记录」;
-         *     04 §11.1; S-16), for operations to check prices, rebates and product information.
-         *     Permission point `feedback.view` (04 §11.1), read only, no step-up; lacking it is 10403
+         *     编排 D10-757（S-16；04 §11.1 权限点与 §6.3 后台查看接口待编排回写）), for operations to check prices, rebates and product information.
+         *     Permission point `feedback.view` (编排 D10-757), read only, no step-up; lacking it is 10403
          *     with `data.reason=admin_permission_denied`. Reading does not write an audit record.
          *     Lists only the console's app records; records of other apps never appear.
          *     Feedbacks of users whose account deletion completed have been deleted (BR-ID-28) and never appear.
