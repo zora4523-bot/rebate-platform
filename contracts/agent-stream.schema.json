@@ -519,7 +519,7 @@
           "type": ["string", "null"]
         },
         "price_spec_hint": {
-          "description": "Spec qualifier of the price, the same server judgement and values as openapi ProductCard.price_spec_hint (BR-PROD-04; D10-713): price_from shows 「¥x 起」, spec_uncertain shows spec_min_price_note 规格以下单页为准 beside the price, null only when the price is known to belong to this product / spec. Independent of match_tag (BR-PROD-04: the check mark does not change the price qualifier). Optional; absent is read as null.",
+          "description": "Spec qualifier of the price (BR-PROD-04): the same values and the same server judgement as openapi ProductCard.price_spec_hint, copied from the catalog card; the client never infers it. Independent of match_tag (BR-PROD-04: the check mark does not change the price qualifier). Optional; absent is read as null.",
           "type": ["string", "null"],
           "enum": ["price_from", "spec_uncertain", null]
         },
