@@ -4,7 +4,7 @@
 // the decision is pinned there. jd in sku mode → null; taobao, pdd, jd item mode → spec_uncertain;
 // pool fallback, stale cache and open re-check cards keep that decision (no null from the source).
 // See kit.ts for how the JD mode shows in the card's own identity.
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import {
   EXPECTED,
   SHAPES,
@@ -15,10 +15,9 @@ import {
   noRebateQuote,
   refOf,
   requestOf,
-  type Shape,
 } from './kit.ts';
 
-describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
+for (const shape of SHAPES) {
   const expected = EXPECTED[shape];
 
   it(`[AC-B1-05zh#9][BR-PROD-04] ${shape} 搜索卡 price_spec_hint = ${String(expected)}，预备卡与登记后的卡相同`, async () => {
@@ -106,7 +105,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     if (active.kind !== 'card') return;
     expectHint(active.card, expected);
   });
-});
+}
 
 it('[AC-B1-05zh#15][BR-PROD-04] 同一京东联盟条目（同带 itemId 与 skuId）：按卡片自身 product_key 的派生模式判定，不按条目字段猜', async () => {
   const f = assembler();

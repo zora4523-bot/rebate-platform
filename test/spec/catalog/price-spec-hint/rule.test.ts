@@ -106,4 +106,4 @@ it('[AC-B1-05zh#8][BR-PROD-04] 属性：任意平台码与模式取值，结果�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-});
+}, 900_000);

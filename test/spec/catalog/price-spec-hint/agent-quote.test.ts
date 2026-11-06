@@ -3,7 +3,7 @@
 // catalog card comes from the real card entry, so the decision is the catalog one; a catalog value
 // patched in shows the Agent card copies rather than recomputes. The quote card's match_tag stays
 // matched and does not move the hint. Read loosely: the Agent card type gains the field with CT-26v.
-import { describe, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   createCatalogCardEntry,
   type CatalogCardInput,
@@ -71,7 +71,7 @@ function productOf(cards: readonly UnnumberedCard[]): Record<string, unknown> {
   return data['product'] as Record<string, unknown>;
 }
 
-describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
+for (const shape of SHAPES) {
   const expected = EXPECTED[shape];
 
   it(`[AC-B1-05zh#21][BR-PROD-04] ${shape} 链接识别报价卡（resolve_link）带目录判定 ${String(expected)}`, async () => {
@@ -98,7 +98,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     expectHint(product, expected);
     expect(f.register).toHaveBeenCalledTimes(1);
   });
-});
+}
 
 it.each([
   { shape: 'taobao', hint: 'price_from' },

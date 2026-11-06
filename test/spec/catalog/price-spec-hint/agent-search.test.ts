@@ -2,7 +2,7 @@
 // copies the catalog card's price_spec_hint unchanged. It is not derived from match_tag (match_tag is
 // the per-card condition mark; 「标记不改变本条的价格限定语」), not recomputed, and survives the guest
 // login_to_view mask. Read loosely: the Agent card type gains the field with CT-26v.
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import type { UnlinkedCard } from '../../../../apps/api/src/modules/catalog/index.ts';
 import {
   maskLoginToView,
@@ -41,7 +41,7 @@ async function catalogCard(
 const HINTS = ['spec_uncertain', null, 'price_from'] as const;
 const MATCH_TAGS = ['matched', 'relaxed', 'spec_unconfirmed', undefined] as const;
 
-describe.each(HINTS)('目录卡 price_spec_hint = %j', (hint) => {
+for (const hint of HINTS) {
   it.each(MATCH_TAGS)(
     `[AC-B1-05zh#17][BR-PROD-04][BR-AI-24] Agent 搜索卡照抄 ${String(hint)}，与条件标记 %s 无关`,
     async (match) => {
@@ -70,7 +70,7 @@ describe.each(HINTS)('目录卡 price_spec_hint = %j', (hint) => {
     expect(masked.rebate_basis).toBe('login_required');
     expectHint(masked as unknown as Record<string, unknown>, hint);
   });
-});
+}
 
 it('[AC-B1-05zh#19][BR-PROD-04] 目录卡缺 price_spec_hint（按契约读作 null）时 Agent 卡给 null，不自行改成 spec_uncertain', async () => {
   const card = await catalogCard('taobao', { match_tag: 'spec_unconfirmed' });
