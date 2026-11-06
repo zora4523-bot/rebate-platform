@@ -8,18 +8,24 @@
 import ts from 'typescript';
 import { expect, it } from 'vitest';
 import {
+  ADMIN_PROBE,
+  H5_PROBE,
+  PREFIX,
   SCAN_TIMEOUT,
   TIMEOUT,
+  isError,
   lintAs,
   overBaseline,
   rawReports,
   readBaseline,
   readRepo,
+  styleRulesFor,
   type Linted,
 } from './support.ts';
 
 const ADMIN_PAGES = 'apps/admin/src/pages/';
 const ADMIN_COMPONENTS = 'apps/admin/src/components/';
+const ADMIN_COMPONENT_PROBE = 'apps/admin/src/components/lint-style-probe/Probe.tsx';
 const H5 = 'apps/h5/src/';
 const FALLBACK_SAMPLE = 'apps/h5/src/entries/app/pages/page-pending.tsx';
 
@@ -112,6 +118,27 @@ function nameOf(name: ts.PropertyName): string | null {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : null;
 }
 
+/** The template a template head / middle / tail belongs to, or null when it is not in one. */
+function templateOf(node: ts.Node): ts.Node | null {
+  let host: ts.Node | undefined = node;
+  while (host !== undefined) {
+    if (ts.isTemplateExpression(host) || ts.isTemplateLiteralTypeNode(host)) return host;
+    host = host.parent as ts.Node | undefined;
+  }
+  return null;
+}
+
+/** A string in a type position (`'a' | 'b'`, `` `2${string}` ``): not a style value. */
+function inType(node: ts.Node): boolean {
+  const parent = node.parent as ts.Node | undefined;
+  return (
+    parent !== undefined &&
+    (ts.isLiteralTypeNode(parent) ||
+      ts.isTemplateLiteralTypeNode(parent) ||
+      ts.isTemplateLiteralTypeSpan(parent))
+  );
+}
+
 /** Hard-coded styles in a source file, each with the line range a report must fall in. */
 function scan(file: string, text: string): Finding[] {
   const tsx = file.endsWith('.tsx');
@@ -128,14 +155,13 @@ function scan(file: string, text: string): Finding[] {
       if (isNumber(node.initializer)) push(node, `fontSize: ${node.initializer.getText(source)}`);
     }
     const part = ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node);
-    const text =
-      part || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
-        ? (node as ts.LiteralLikeNode).text
-        : null;
-    if (text !== null) {
-      // A report on a template literal may sit anywhere in it: use the whole template's lines.
-      let host: ts.Node = node;
-      while (part && !ts.isTemplateExpression(host)) host = host.parent;
+    const literal =
+      (part || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      !inType(node);
+    const text = literal ? (node as ts.LiteralLikeNode).text : null;
+    // A report on a template literal may sit anywhere in it: use the whole template's lines.
+    const host: ts.Node | null = part ? templateOf(node) : node;
+    if (text !== null && host !== null && !ts.isTemplateLiteralTypeNode(host)) {
       if (tsx && HEX.test(text.trim())) push(host, text);
       const classes = text.split(/\s+/).filter((cls) => cls !== '');
       for (const cls of classes) if (literalArbitrary(cls)) push(host, cls);
@@ -182,6 +208,13 @@ function missed(entries: readonly Linted[]): string[] {
 it(
   '[AC-F1-01w-SCAN#1] 扫描范围含后台 src/pages/** 与 src/components/**（及 H5 src/**）：数字 fontSize、TSX hex、字面任意值、小字品牌色都被规则报出，后台这两处没有基线外违规',
   async () => {
+    // Without the rules or the baseline this fails here, on an assertion, before any scanning.
+    for (const path of [ADMIN_PROBE, ADMIN_COMPONENT_PROBE, H5_PROBE]) {
+      const rules = await styleRulesFor(path);
+      const loaded = rules.size > 0 && [...rules.values()].every(isError);
+      expect(loaded, `${PREFIX}* rules are on as errors for ${path}`).toBe(true);
+    }
+    const baseline = readBaseline();
     const linted = await rawReports();
     const admin = linted.filter(
       (entry) => entry.file.startsWith(ADMIN_PAGES) || entry.file.startsWith(ADMIN_COMPONENTS),
@@ -191,7 +224,7 @@ it(
     const h5 = linted.filter((entry) => entry.file.startsWith(H5));
     expect(h5.length).toBeGreaterThan(0);
     expect(missed([...admin, ...h5]), 'hard-coded styles the rules do not report').toEqual([]);
-    expect(overBaseline(admin, readBaseline())).toEqual([]);
+    expect(overBaseline(admin, baseline)).toEqual([]);
   },
   SCAN_TIMEOUT,
 );
