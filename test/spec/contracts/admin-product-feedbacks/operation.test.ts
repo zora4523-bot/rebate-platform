@@ -99,18 +99,57 @@ it('[AC-CT-26x#6] 描述写明 feedback.view、只读无 step-up、不写审计�
   expect(desc).toContain('admin_permission_denied');
 });
 
+// 描述按句切开（中文句号、分号、换行、英文句末「. 」）；`data.fields` 里的点不切。
+function sentences(desc: string): string[] {
+  return desc
+    .split(/[。；;\n]|\.\s/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+}
+
+// 至少有一句同时满足全部模式。
+function someSentence(desc: string, patterns: RegExp[]): boolean {
+  return sentences(desc).some((part) => patterns.every((pattern) => pattern.test(part)));
+}
+
+// 期望措辞（实现方照写其一即可）：
+// 范围：「只列本控制台 app 的记录」或 "only the console's app"；
+// 注销：「注销完成的用户其反馈已删除（BR-ID-28），不会出现」或 "feedbacks of users whose account deletion completed are deleted (BR-ID-28) and never appear"。
+const onlyConsoleApp =
+  /只(列|返回|含|显示|列出)\s*本控制台\s*(所属\s*)?(的\s*)?`?app`?|only\s+(the|this)\s+console's\s+`?app`?/i;
+const otherApps =
+  /(所有|全部|任意|各)\s*`?app|(?<!不)跨\s*`?app|all\s+apps|every\s+app|across\s+apps/i;
+const deletionWord = /注销|account\s+deletion/i;
+const deletedWord = /已(被)?删除|(are|were|have\s+been|has\s+been)\s+deleted/i;
+const absentWord =
+  /不会(出现|返回|列出)|不(出现|返回|列出)|never\s+(appear|returned|listed)|not\s+(be\s+)?(listed|returned|shown)/i;
+const stillKept =
+  /仍(然)?(保留|展示|显示|出现|返回|列出)|保留并(展示|显示|返回)|still\s+(kept|retained|shown|listed|returned|appear)|(are|is)\s+retained/i;
+
 it('[AC-CT-26x#7] 描述写明只列本控制台 app 的记录、注销用户的反馈已删除（BR-ID-28）、游客记录 user_id 为 null', () => {
   const desc = descriptionOf(contract());
-  expect(desc).toMatch(/本控制台|本\s*app|(the|this|console's|own)\s+app\b/i);
-  expect(desc).toContain('BR-ID-28');
-  expect(desc).toMatch(/注销|account (deletion|closure)|deleted (user|account|member)s?/i);
+  // 范围限定为本控制台 app，不能是所有 / 跨 app。
+  expect(desc).toMatch(onlyConsoleApp);
+  expect(desc).not.toMatch(otherApps);
+  // 注销用户的反馈：同一句里写明注销、BR-ID-28、已删除、不会出现；不能写成仍保留或仍展示。
+  expect(someSentence(desc, [deletionWord, /BR-ID-28/, deletedWord, absentWord])).toBe(true);
+  // 「仍保留」只在讲注销用户的分句里算写反；讲游客记录不随注销删除的分句不算。
+  const kept = desc
+    .split(/[。；;，,\n]|\.\s/)
+    .filter((part) => deletionWord.test(part) && stillKept.test(part) && !/游客|guest/i.test(part));
+  expect(kept).toEqual([]);
   expect(desc).toMatch(/游客|guest/i);
   expect(desc).toMatch(/user_id`?[^。]{0,40}?null/);
 });
 
-it('[AC-CT-26x#8] 描述写明按 created_at 降序排列', () => {
+it('[AC-CT-26x#8] 描述写明按 created_at 降序排列，created_at 相同再按服务端内部顺序', () => {
   const desc = descriptionOf(contract());
   expect(desc).toMatch(/created_at`?\s*(降序|倒序|desc)/i);
+  expect(desc).not.toMatch(/created_at`?\s*(升序|正序|asc)/i);
+  // 同一句：先 created_at 降序，再按服务端内部顺序（不限定具体内部字段）。
+  expect(desc).toMatch(
+    /created_at`?\s*(降序|倒序|desc(ending)?)[^。；;\n]*?(再按|其次按|相同时?按|then\s+(by\s+)?|ties?\s+(are\s+)?(broken\s+)?by\s+)[^。；;\n]*?(服务端内部顺序|server[- ]internal\s+order|internal\s+server\s+order)/i,
+  );
 });
 
 it('[AC-CT-26x#9] 参数恰为 X-Trace-Id、page、page_size、platform、reason、from、to；前三个引用现有组件，筛选都可选', () => {
@@ -151,12 +190,31 @@ it('[AC-CT-26x#11] from（含）、to（不含）都是 date-time；from 不早�
     accepts(doc, schema, goodTimes, badTimes);
   }
   const desc = descriptionOf(contract());
-  expect(desc).toContain('20001');
-  expect(desc).toMatch(/fields/);
-  expect(desc).toMatch(/from[\s\S]{0,40}?to/);
-  // 「含」不能借「不含」「不包含」凑数。
-  expect(desc).toMatch(/inclusive|(?<!不)(?<!不包)含/i);
-  expect(desc).toMatch(/exclusive|不含|不包含/i);
+  // 区间边界：from 紧跟「含 / inclusive」，to 紧跟「不含 / exclusive」（期望写法：`from`（含）、`to`（不含），
+  // 或 `from` (inclusive)、`to` (exclusive)）；写反的一律不行。
+  expect(desc).toMatch(/`from`\s*(?:[(（]\s*(?:inclusive|含|包含)\s*[)）]|is\s+inclusive)/i);
+  expect(desc).toMatch(/`to`\s*(?:[(（]\s*(?:exclusive|不含|不包含)\s*[)）]|is\s+exclusive)/i);
+  expect(desc).not.toMatch(/\bfrom`?\s*[(（]?\s*(?:is\s+)?(?:exclusive|不含|不包含)/i);
+  expect(desc).not.toMatch(/\bto`?\s*[(（]?\s*(?:is\s+)?(?:inclusive|含|包含)/i);
+  // 错误条件：同一句写明 from 不早于 to（相等也算）→ 20001，data.fields 恰为 [from, to]
+  // （期望写法：`from` 不早于 `to`（相等也算）时返回 20001，`data.fields=["from","to"]`）。
+  const notBefore =
+    /`?from`?\s*(?:>=|≥|不早于|is\s+not\s+(?:earlier\s+than|before)|not\s+(?:earlier\s+than|before))\s*`?to`?/i;
+  const equalToo = /相等|equal/i;
+  const exactFields =
+    /data\.fields`?\s*(?:=|为|恰为|is|:)?\s*`?\s*\[\s*["'`]?from["'`]?\s*,\s*["'`]?to["'`]?\s*\]/i;
+  expect(someSentence(desc, [notBefore, equalToo, /20001/, exactFields])).toBe(true);
+  // 写成「from 早于 to」「from < to」报错的不行（「不早于」「not before」不受影响）。
+  expect(desc).not.toMatch(
+    /`?from`?\s*(?:<(?!=)|(?<!不)早于|is\s+(?:earlier\s+than|before))\s*`?to`?/i,
+  );
+  // data.fields 只能是 [from, to]：不能只列其中一个或多列别的。
+  const fieldLists = /data\.fields`?\s*(?:=|为|恰为|is|:)?\s*`?\s*\[([^\]]*)\]/gi;
+  const listed = [...desc.matchAll(fieldLists)].map((match) =>
+    (match[1] ?? '').replace(/["'`\s]/g, ''),
+  );
+  expect(listed.length).toBeGreaterThan(0);
+  for (const value of listed) expect(value).toBe('from,to');
 });
 
 it('[AC-CT-26x#12] 200 响应是后台分页信封：code/msg/data/trace_id，data 含 items、page、page_size、total', () => {
