@@ -432,8 +432,10 @@ it(
         expect(await formsOf(f, rich)).toEqual([first]);
         expect(await audits(f, PREFILL_ACTION)).toEqual(records);
 
-        // Rejected on 11-30: the same day gets no rebuild and no record.
-        await answer(await h.reject(first.adjust_id, { reason: REASON }), 0);
+        // Rejected on 11-30: the same day gets no rebuild and no record. h.maker's session is past
+        // its idle limit after the hour above: a fresh fund.adjust session rejects.
+        const rejecter = await h.caller([ADJUST]);
+        await answer(await h.reject(first.adjust_id, { reason: REASON }, { caller: rejecter }), 0);
         f.clock.advanceMs(60_000);
         await w.round();
         expect(await pendingClosing(f, rich)).toEqual([]);

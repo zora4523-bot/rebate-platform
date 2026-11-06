@@ -10,6 +10,7 @@
 // Amounts by hand in each test.
 import { expect, it } from 'vitest';
 import {
+  ADJUST,
   ADJUSTMENT_PENDING,
   DAY_MS,
   TIMEOUT,
@@ -79,8 +80,10 @@ it(
         expect(w.warnings(ADJUSTMENT_PENDING, request.id)).toHaveLength(2);
         expect(await formsOf(f, userId)).toEqual([form]);
 
-        await expectApproved(f, await h.approve(form!.adjust_id), {
-          caller: h.maker,
+        // h.maker's session is past its idle / absolute limit by now: a fresh fund.adjust session.
+        const approver = await h.caller([ADJUST]);
+        await expectApproved(f, await h.approve(form!.adjust_id, { caller: approver }), {
+          caller: approver,
           form: form!,
           amount: 2000n,
         });
@@ -160,12 +163,18 @@ it(
         expect(await formsOf(f, userId)).toHaveLength(2);
         expect(await pendingClosing(f, userId)).toEqual([rebuilt]);
 
-        await expectRejected(f, await h.reject(rebuilt.adjust_id, { reason: REASON }), {
-          caller: h.maker,
-          form: rebuilt,
-          note: REASON,
-          available: 1500n,
-        });
+        // A fresh fund.adjust session after the clock moved (admin session: 30 min idle, 8 h).
+        const rejecter = await h.caller([ADJUST]);
+        await expectRejected(
+          f,
+          await h.reject(rebuilt.adjust_id, { reason: REASON }, { caller: rejecter }),
+          {
+            caller: rejecter,
+            form: rebuilt,
+            note: REASON,
+            available: 1500n,
+          },
+        );
         f.clock.advanceMs(60_000);
         await w.round();
         expect(
@@ -187,8 +196,9 @@ it(
         expect(await formsOf(f, userId)).toHaveLength(3);
         await expectStillProcessing(f, request.id, userId);
 
-        await expectApproved(f, await h.approve(last.adjust_id), {
-          caller: h.maker,
+        const approver = await h.caller([ADJUST]);
+        await expectApproved(f, await h.approve(last.adjust_id, { caller: approver }), {
+          caller: approver,
           form: last,
           amount: 1500n,
         });
@@ -224,8 +234,9 @@ it(
         expect(await formsOf(f, userId)).toEqual([form]);
         expect(await moneyOf(f, userId)).toEqual({ available: 800n, frozen: 0n });
 
-        await expectApproved(f, await h.approve(form.adjust_id), {
-          caller: h.maker,
+        const approver = await h.caller([ADJUST]);
+        await expectApproved(f, await h.approve(form.adjust_id, { caller: approver }), {
+          caller: approver,
           form,
           amount: 800n,
         });
@@ -277,8 +288,9 @@ it(
         });
         expect(await formsOf(f, userId)).toHaveLength(3);
 
-        await expectApproved(f, await h.approve(fresh.adjust_id), {
-          caller: h.maker,
+        const approver = await h.caller([ADJUST]);
+        await expectApproved(f, await h.approve(fresh.adjust_id, { caller: approver }), {
+          caller: approver,
           form: fresh,
           amount: 2000n,
         });
