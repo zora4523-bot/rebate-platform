@@ -3281,3 +3281,64 @@ it('[CT-06zzzk] the B2-04zx shapes: an inline `as const` table with %s and a top
   );
   expect(table.ok && table.outside).toMatch(/code outside the tests changed/);
 });
+
+it('[CT-06zzzk] Codex r1 S1: a named table whose initialiser goes on past the array (a line break before .concat, a comma, any operator) is not applicable; outside is said and the rows are not found', () => {
+  const block = (body: string): string =>
+    `it.each(ROWS)('case %s', async (code) => {\n  ${body}\n});`;
+  const decls: [string, string][] = [
+    ["const ROWS = ['14', '15']\n.concat(['16']);", '.'],
+    ["const ROWS = ['14', '15']\n  .map((c) => c);", '.'],
+    ["const ROWS = ['14', '15'] as const\n.concat(['16']);", '.'],
+    ["const ROWS = ['14', '15'], MORE = 1;", ','],
+    ["const ROWS = ['14', '15'] || ['16'];", '||'],
+    ["const ROWS = ['14', '15']\n['16'];", '['],
+    ["const ROWS = ['14', '15']\nconst OTHER = 1;", 'const'],
+  ];
+  for (const [decl, follows] of decls) {
+    const base = src(decl, block('expect(code).toBeTruthy();'));
+    const head = src(decl, block('expect(code).toBe(code);'));
+    const got = compareModifiedBlocks(base, head, ['case 14', 'case 15']);
+    expect(rowsOf(got)[0], decl).toBe(
+      `its block at the base is an .each / .for table whose rows cannot be expanded for certain: the table ROWS is more than an array literal: \`${follows}\` follows it, not a \`;\``,
+    );
+    expect(got.ok && got.outside, decl).toMatch(/is not declared and differs from the base/);
+  }
+  // The B2-04zx shape (the array, then `;`) still applies.
+  const ok = "const ROWS = ['14', '15'] as const;";
+  expect(
+    rowsOf(
+      compareModifiedBlocks(
+        src(ok, block('expect(code).toBeTruthy();')),
+        src(ok, block('expect(code).toBe(code);')),
+        ['case 14', 'case 15'],
+      ),
+    ),
+  ).toEqual([true, true]);
+});
+
+it('[CT-06zzzk] Codex r1 S2: the table name inside a template interpolation (at any depth) or a string counts as a use: not applicable', () => {
+  const decl = "const ROWS = ['14', '15'];";
+  const block = (body: string): string =>
+    `it.each(ROWS)('case %s', async (code) => {\n  ${body}\n});`;
+  const extras = [
+    "const note = `${ROWS.push('16')}`;",
+    "const note = `a ${`b ${ROWS.push('16')}`}`;",
+    'const note = `a ${[1].map(() => `${ROWS.length}`)}`;',
+    "const grab = globalThis['ROWS'];",
+    'eval(`ROWS.push(1)`);',
+  ];
+  for (const extra of extras) {
+    const base = src(decl, extra, block('expect(code).toBeTruthy();'));
+    const head = src(decl, extra, block('expect(code).toBe(code);'));
+    expect(rowsOf(compareModifiedBlocks(base, head, ['case 14', 'case 15']))[0], extra).toMatch(
+      /the table ROWS is not one top-level const used only by this block \(1 declaration\(s\), 2 occurrence\(s\), [1-9]\d* inside a template or a string\)/,
+    );
+  }
+  // A template or a string not naming it changes nothing.
+  const plain = src(decl, 'const note = `${1 + 1} ROWSX`;', block('expect(code).toBeTruthy();'));
+  const plainHead = src(decl, 'const note = `${1 + 1} ROWSX`;', block('expect(code).toBe(code);'));
+  expect(rowsOf(compareModifiedBlocks(plain, plainHead, ['case 14', 'case 15']))).toEqual([
+    true,
+    true,
+  ]);
+});

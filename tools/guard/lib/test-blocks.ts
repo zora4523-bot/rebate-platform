@@ -1450,9 +1450,30 @@ function outsideView(source: string): OutsideView {
     const decls = uses.filter(
       ([, k]) => tokens[k - 1]?.text === 'const' && depth[k] === 0 && !inBlock[k],
     );
-    if (decls.length !== 1 || uses.length !== 2) {
+    // Codex r1 S2: the name inside a template's `${…}` (Token.inner, at any depth) counts too, and
+    // so does a string or a template part naming it (a computed access, an eval).
+    const word = new RegExp(
+      `(?:^|[^$\\p{ID_Continue}])${escapeRegex(name)}(?:$|[^$\\p{ID_Continue}])`,
+      'u',
+    );
+    const nested = (list: readonly Token[]): number =>
+      list.reduce((n, t) => {
+        let here = 0;
+        if (t.kind === 'str' && word.test(t.value ?? t.text)) here += 1;
+        if (t.kind === 'tpl') {
+          if ((t.parts ?? [t.text]).some((part) => word.test(part ?? t.text))) here += 1;
+          const inner = t.inner ?? [];
+          here += inner.filter(
+            (u, k) => u.kind === 'id' && u.text === name && inner[k - 1]?.text !== '.',
+          ).length;
+          here += nested(inner);
+        }
+        return n + here;
+      }, 0);
+    const hidden = nested(tokens);
+    if (decls.length !== 1 || uses.length !== 2 || hidden > 0) {
       return {
-        reason: `the table ${name} is not one top-level const used only by this block (${decls.length} declaration(s), ${uses.length} occurrence(s))`,
+        reason: `the table ${name} is not one top-level const used only by this block (${decls.length} declaration(s), ${uses.length} occurrence(s), ${hidden} inside a template or a string)`,
       };
     }
     const d = (decls[0] as readonly [Token, number])[1];
@@ -1473,13 +1494,16 @@ function outsideView(source: string): OutsideView {
     const close = match[open] as number;
     let last = close;
     if (tokens[close + 1]?.text === 'as' && tokens[close + 2]?.text === 'const') last = close + 2;
+    // Codex r1 S1: the initialiser is exactly the array literal (and `as const`), then a `;` or the
+    // end of the file, judged by the tokens, never by lines: a line break before `.concat(…)`
+    // continues the expression.
     const next = tokens[last + 1];
-    if (next !== undefined && next.text !== ';' && !next.nl) {
+    if (next !== undefined && next.text !== ';') {
       return {
-        reason: `the table ${name} is more than an array literal (\`${next.text}\` follows)`,
+        reason: `the table ${name} is more than an array literal: \`${next.text}\` follows it, not a \`;\``,
       };
     }
-    const end = next?.text === ';' ? last + 1 : last;
+    const end = next === undefined ? last : last + 1;
     return { open, close, decl: joinTokens(tokens, d - 1, end, sep) };
   };
   // CT-06zzzk (D10-738 A): the table of the `.each` call `c` (its table call at `p`) expanded row
