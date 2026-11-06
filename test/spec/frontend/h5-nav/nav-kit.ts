@@ -11,8 +11,18 @@ import { bridge } from '../../../../packages/contracts-ts/src/index.ts';
 import dictionary from '../../../../contracts/texts.default.json' with { type: 'json' };
 import { installBridge } from '../bridge-sdk/kit.ts';
 
-/** Route chunks load through the dev server; the first one can take a few seconds. */
-export const WAIT = { timeout: 15_000 } as const;
+/**
+ * Upper bound of each expect.element wait. Route chunks load through the dev server and the first
+ * one can take a few seconds; the bound stays well below the test timeouts below, so a shell that
+ * never calls ui.setNavBar ends in an assertion failure, not in a test timeout.
+ */
+export const WAIT = { timeout: 8_000 } as const;
+
+/** Timeout of a test that waits for one or two route entries (≥ 3 × WAIT). */
+export const TEST_TIMEOUT = 30_000;
+
+/** Timeout of the walk over all nine routes plus the return to /earnings (ten entries). */
+export const WALK_TIMEOUT = 120_000;
 
 /** contracts/bridge.schema.json ui.setNavBar params.title maxLength. */
 export const TITLE_MAX = 50;
@@ -107,6 +117,23 @@ export function navigate(path: string): void {
 /** Waits until native has received a ui.setNavBar call while the URL path was `path`. */
 export async function entered(harness: ShellHarness, path: string): Promise<void> {
   await expect.element(harness.probe, WAIT).toHaveAttribute('data-last-nav-path', path);
+}
+
+let settleRound = 0;
+
+/**
+ * Waits until the page has had two animation frames after the last navigation, so the router and
+ * React have committed it and run its effects (a repeat ui.setNavBar, if any, has been sent).
+ */
+export async function settled(harness: ShellHarness): Promise<void> {
+  settleRound += 1;
+  const token = String(settleRound);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      harness.probe.dataset.settled = token;
+    }),
+  );
+  await expect.element(harness.probe, WAIT).toHaveAttribute('data-settled', token);
 }
 
 /** Calls received while the URL path was `path`. */
