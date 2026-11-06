@@ -10,6 +10,13 @@ export interface PriceSpecHintInput {
   readonly platform: string;
   /** product_key.jd.mode the card's product_key was derived under; absent means item. */
   readonly jdMode?: 'item' | 'sku';
+  /**
+   * B1-04zzn (D10-728 ②): true only when the card's price is the union product-detail answer
+   * (GET /v1/products/{product_key}: fresh, cache hit or stale entry of that answer). Absent or
+   * anything but exactly true means a list / search / pool / Agent price. Pinduoduo's detail price
+   * is the lowest SKU's (pdd.ddk.goods.detail min_group_price), so pdd + true reads price_from.
+   */
+  readonly fromUnionDetail?: boolean;
 }
 
 export function priceSpecHintFor(input: PriceSpecHintInput): PriceSpecHint {
