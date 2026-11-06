@@ -27,6 +27,7 @@ import type { Clock, RootLogger, TaobaoAppCredentials } from '../../platform/ind
 import type { SiteOAuthProvider } from '../auth-expiry/reauth.ts';
 import { REGISTERED_PLATFORMS, type RegisteredPlatform } from '../domain/types.ts';
 import type { UnionTransport } from './replay.ts';
+import { createTaobaoSiteOAuth } from './taobao/site-oauth.ts';
 
 export type SiteOAuthProviders = Partial<Readonly<Record<RegisteredPlatform, SiteOAuthProvider>>>;
 
@@ -111,9 +112,27 @@ export function createSiteOAuthProviders(
   logger: Pick<RootLogger, 'warn'>,
   wiring?: SiteOAuthWiring,
 ): SiteOAuthProviders {
-  void appEnv;
-  void clock;
-  void logger;
-  void wiring;
-  throw new Error('NotImplemented: createSiteOAuthProviders');
+  if (isFakeEnv(appEnv)) return createFakeSiteOAuth(appEnv, clock);
+  const credentials = wiring?.taobaoCredentials ?? null;
+  const redirectUri = wiring?.taobaoRedirectUri ?? null;
+  if (
+    wiring === undefined ||
+    credentials === null ||
+    credentials.appKey === '' ||
+    credentials.appSecret === '' ||
+    redirectUri === null ||
+    redirectUri === ''
+  ) {
+    logger.warn({ app_env: appEnv }, 'union_site_oauth_unconfigured');
+    return Object.freeze({});
+  }
+  return Object.freeze({
+    taobao: createTaobaoSiteOAuth({
+      credentials: () => Promise.resolve(credentials),
+      // The plain HTTPS transport as handed in: never wrapped in the archiving transport.
+      transport: wiring.transport,
+      clock,
+      redirectUri,
+    }),
+  });
 }

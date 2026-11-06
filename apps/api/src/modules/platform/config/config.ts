@@ -33,6 +33,7 @@ import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readStagingTestPhoneConfig, type StagingTestPhoneConfig } from './staging-test-phones.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
+import { readTaobaoOAuthConfig } from './taobao-oauth.ts';
 import { readTaobaoSourceConfig } from './taobao-sources.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
@@ -421,6 +422,7 @@ export function loadConfig(
     problems.push(...readJdSiteConfig(env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     problems.push(...readTaobaoSourceConfig(env).problems);
+    problems.push(...readTaobaoOAuthConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
@@ -481,6 +483,8 @@ export function loadConfig(
     problems: taobaoSourceProblems,
   } = readTaobaoSourceConfig(env);
   violations.push(...taobaoSourceProblems);
+  const { taobaoOAuthRedirectUri, problems: taobaoOAuthProblems } = readTaobaoOAuthConfig(env);
+  violations.push(...taobaoOAuthProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
     values.APP_ENV,
     env,
@@ -532,6 +536,8 @@ export function loadConfig(
     pddQueryCustomParameters,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(taobao === null ? {} : { taobao }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(taobaoOAuthRedirectUri === null ? {} : { taobaoOAuthRedirectUri }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(dataoke === null ? {} : { dataoke }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.

@@ -34,11 +34,15 @@ import {
   DB,
   FIELD_CRYPTO,
   ROOT_LOGGER,
+  TaobaoStartupError,
+  kmsAccessOf,
+  openTaobaoCredentials,
   type AppConfig,
   type AuditPort,
   type Clock,
   type FieldCrypto,
   type RootLogger,
+  type TaobaoAppCredentials,
 } from '../platform/index.ts';
 import { AdminUnionAccountOptions } from './application/admin-account-options.ts';
 import { AdminUnionAccounts, reauthAuditWriter } from './application/admin-accounts.ts';
@@ -49,8 +53,9 @@ import { AdminUnionAccountOptionsController } from './http/admin/union-account-o
 import { AdminUnionAccountsController } from './http/admin/union-accounts.controller.ts';
 import { AdminUnionAlertPhonesController } from './http/admin/union-alert-phones.controller.ts';
 import { AdminUnionPidsController } from './http/admin/union-pids.controller.ts';
-import { createSiteOAuthProviders } from './infra/fake-site-oauth.ts';
+import { createSiteOAuthProviders, type SiteOAuthWiring } from './infra/fake-site-oauth.ts';
 import { HjyIgnoreEvidenceStore } from './infra/hjy-ignore-evidence-store.ts';
+import { createUnionHttpTransport } from './infra/http-transport.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type UnionAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -59,6 +64,36 @@ export interface UnionAdminOptions {
   readonly auditWriter: UnionAuditWriterFactory;
   /** content's configuration reader (attr.jd.user_key_mode, union.auth_alert_*). */
   readonly config: (db: Kysely<Database>, clock: Clock) => Pick<ContentReader, 'configValue'>;
+}
+
+/**
+ * The real site OAuth wiring of staging / prod (B1-04zzi): the Taobao app credentials (B1-04k:
+ * staging secret file read once, prod KMS) are opened only when TAOBAO_OAUTH_REDIRECT_URI is set
+ * too; a refusal to open them (unreadable file, no KMS) leaves taobao without a provider, logged by
+ * its fixed code only. The token transport is the plain HTTPS one: never archived (the request
+ * carries the secret and the code, the answer the tokens). local / test: none (the fake is used).
+ */
+async function siteOAuthWiring(
+  config: AppConfig,
+  logger: Pick<RootLogger, 'warn'>,
+): Promise<SiteOAuthWiring | undefined> {
+  if (config.appEnv === 'local' || config.appEnv === 'test') return undefined;
+  const redirectUri = config.taobaoOAuthRedirectUri ?? null;
+  let taobaoCredentials: TaobaoAppCredentials | null = null;
+  if (redirectUri !== null && config.taobao !== null && config.taobao !== undefined) {
+    try {
+      const open = await openTaobaoCredentials(config.appEnv, config.taobao, kmsAccessOf(config));
+      taobaoCredentials = await open();
+    } catch (error) {
+      if (!(error instanceof TaobaoStartupError)) throw error;
+      logger.warn({ code: error.code }, 'union_site_oauth_credentials_unavailable');
+    }
+  }
+  return {
+    taobaoCredentials,
+    taobaoRedirectUri: redirectUri,
+    transport: createUnionHttpTransport(),
+  };
 }
 
 @Module({})
@@ -103,13 +138,13 @@ export class UnionAdminModule {
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
-          useFactory: (
+          useFactory: async (
             appConfig: AppConfig,
             clock: Clock,
             logger: RootLogger,
             db?: Kysely<Database>,
             crypto?: FieldCrypto,
-          ): AdminUnionAccounts => {
+          ): Promise<AdminUnionAccounts> => {
             const auditWriter = (trx: Kysely<Database>) => options.auditWriter(trx, clock);
             const reauth =
               db === undefined || crypto === undefined
@@ -121,7 +156,12 @@ export class UnionAdminModule {
                     // B1-22c's session audit rows under the contract's action names.
                     auditWriter: reauthAuditWriter(auditWriter),
                     config: options.config(db, clock),
-                    oauth: createSiteOAuthProviders(appConfig.appEnv, clock, logger),
+                    oauth: createSiteOAuthProviders(
+                      appConfig.appEnv,
+                      clock,
+                      logger,
+                      await siteOAuthWiring(appConfig, logger),
+                    ),
                   });
             return new AdminUnionAccounts({
               db,
