@@ -8,7 +8,7 @@ import type { DB as Database } from '@couli/db';
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import { CLOCK, DB, type Clock } from '../platform/index.ts';
-import type { FeedbackLinkReader } from './application/submit.ts';
+import type { FeedbackAccountReader, FeedbackLinkReader } from './application/submit.ts';
 import {
   FEEDBACK_ROUTE,
   FeedbackController,
@@ -21,6 +21,8 @@ export interface FeedbackModuleOptions {
   readonly config: (db: Kysely<Database>, clock: Clock) => FeedbackConfigReader;
   /** linking's read of app.links (existence in the app), on the handle it is given. */
   readonly links: FeedbackLinkReader;
+  /** identity's deletion status of the submitting account (money r1 S1, BR-ID-28). */
+  readonly accounts: FeedbackAccountReader;
 }
 
 export class FeedbackModule {
@@ -36,7 +38,13 @@ export class FeedbackModule {
             db: Kysely<Database> | undefined,
             clock: Clock,
           ): FeedbackRoutePorts | null =>
-            db === undefined ? null : { config: options.config(db, clock), links: options.links },
+            db === undefined
+              ? null
+              : {
+                  config: options.config(db, clock),
+                  links: options.links,
+                  accounts: options.accounts,
+                },
         },
       ],
     };

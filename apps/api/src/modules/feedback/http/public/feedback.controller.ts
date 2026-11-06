@@ -32,6 +32,7 @@ import {
 } from '../../../platform/index.ts';
 import {
   submitFeedback,
+  type FeedbackAccountReader,
   type FeedbackLinkReader,
   type FeedbackSettings,
 } from '../../application/submit.ts';
@@ -40,6 +41,7 @@ import {
   FEEDBACK_ENABLED_KEY,
   dailyLimit,
   feedbackEnabled,
+  requestAppOfDevice,
 } from '../../domain/rules.ts';
 
 /** content's configuration read (cached, one reader per process). */
@@ -51,7 +53,11 @@ export interface FeedbackConfigReader {
 export interface FeedbackRoutePorts {
   readonly config: FeedbackConfigReader;
   readonly links: FeedbackLinkReader;
+  readonly accounts: FeedbackAccountReader;
 }
+
+/** error-codes.yaml 10403 (App 或请求来源不被允许). */
+const FOREIGN_DEVICE_MSG = 'App 或请求来源不被允许';
 
 /** Nest injection token of the route ports (null in a process without a database). */
 export const FEEDBACK_ROUTE = Symbol('FEEDBACK_ROUTE');
@@ -102,7 +108,16 @@ export class FeedbackController {
       throw new Error('feedback: the route needs the database, idempotency and a verified device');
     }
     const principal = tokenPrincipal(request);
-    const appId = principal?.app_id ?? device.appId;
+    // Money r1 S2: the signature check finds the device by id alone, so the device must belong to
+    // the request's app (the token's, or a guest's X-App-Id); otherwise 10403, nothing written.
+    const appId = requestAppOfDevice(device.appId, principal?.app_id, request.headers['x-app-id']);
+    if (appId === null) {
+      reply
+        .code(403)
+        .type('application/json; charset=utf-8')
+        .send(JSON.stringify({ code: 10403, msg: FOREIGN_DEVICE_MSG, trace_id: request.id }));
+      return;
+    }
     const productKey = request.params.product_key;
     const settings = await this.#settings(ports, appId);
     const key = request.headers['idempotency-key'];
@@ -129,7 +144,7 @@ export class FeedbackController {
             traceId: request.id,
           },
           settings,
-          { clock: this.#clock, links: ports.links },
+          { clock: this.#clock, links: ports.links, accounts: ports.accounts },
         );
         retryAfterSec = outcome.retryAfterSec;
         return outcome.result;

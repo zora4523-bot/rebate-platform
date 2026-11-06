@@ -334,6 +334,7 @@ import {
 import {
   FeedbackModule,
   deleteFeedbackForUser,
+  type FeedbackAccountReader,
   type FeedbackLinkReader,
 } from './modules/feedback/index.ts';
 import {
@@ -790,6 +791,22 @@ const deletionCleanupPorts = {
 const feedbackLinks: FeedbackLinkReader = {
   async linkInApp(handle, appId, linkId) {
     return (await createLandingLinks(handle).find(appId, linkId)) !== null;
+  },
+};
+
+/**
+ * B1-28p (money r1 S1, BR-ID-28): feedback's read of the submitting account's deletion status
+ * through identity's read port (users.status), on feedback's transaction after it has locked the
+ * users row; undefined when the user is not in the app. The reader runs every query on the
+ * executor it is given (its `db` option is never queried).
+ */
+const feedbackAccounts: FeedbackAccountReader = {
+  async deletionStatus(trx, appId, userId) {
+    const statuses = await createUserDeletionStatusReader({ db: trx }).read(trx, {
+      app_id: appId,
+      user_ids: [userId],
+    });
+    return statuses.get(userId);
   },
 };
 
@@ -4899,6 +4916,7 @@ export class AppModule {
               FeedbackModule.forApi({
                 config: (db, clock) => contentReader(db, clock),
                 links: feedbackLinks,
+                accounts: feedbackAccounts,
               }),
             ]
           : []),

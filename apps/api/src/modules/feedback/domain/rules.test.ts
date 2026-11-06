@@ -7,6 +7,8 @@ import {
   dailyLimit,
   feedbackEnabled,
   isUuid,
+  recordedUserId,
+  requestAppOfDevice,
   retryAfterSeconds,
 } from './rules.ts';
 
@@ -52,4 +54,22 @@ it('[AC-B1-28p] link ids that cannot be a uuid never reach the database', () => 
   expect(isUuid('0199A3B4-5C6D-7E8F-9A0B-1C2D3E4F5A70')).toBe(true);
   expect(isUuid('x')).toBe(false);
   expect(isUuid('0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70 ')).toBe(false);
+});
+
+it('[AC-B1-28p#32] recordedUserId: only an account with deletion status none keeps its user_id', () => {
+  expect(recordedUserId('u', 'none')).toBe('u');
+  expect(recordedUserId('u', 'processing')).toBeNull();
+  expect(recordedUserId('u', 'done')).toBeNull();
+  expect(recordedUserId('u', undefined)).toBeNull();
+  expect(recordedUserId(null, 'none')).toBeNull();
+});
+
+it('[AC-B1-28p#35] requestAppOfDevice: the device must belong to the token app or the guest X-App-Id', () => {
+  expect(requestAppOfDevice('a', 'a', 'a')).toBe('a');
+  expect(requestAppOfDevice('b', 'a', 'a')).toBeNull();
+  expect(requestAppOfDevice('b', 'a', 'b')).toBeNull();
+  expect(requestAppOfDevice('b', undefined, 'a')).toBeNull();
+  expect(requestAppOfDevice('a', undefined, 'a')).toBe('a');
+  expect(requestAppOfDevice('a', undefined, undefined)).toBe('a');
+  expect(requestAppOfDevice('a', undefined, ['a', 'b'])).toBe('a');
 });

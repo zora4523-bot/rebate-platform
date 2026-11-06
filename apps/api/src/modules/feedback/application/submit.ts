@@ -5,9 +5,13 @@
 // Order inside the handler:
 //   1. feedback.enabled off → 30145 (before anything about the link);
 //   2. link_id unknown or of another app (linking's read port, on the same transaction) → 30144;
-//   3. pg_advisory_xact_lock(app, device), then the device's count in the +08:00 natural day of
+//   3. logged in: the user's app.users row FOR SHARE (conflicts with identity's deletion cleanup,
+//      which locks that row first), then identity's deletion status of the account on this
+//      transaction; an account in the deletion flow is recorded as a guest (money r1 S1, BR-ID-28);
+//   4. pg_advisory_xact_lock(app, device), then the device's count in the +08:00 natural day of
 //      the Clock's instant; count ≥ feedback.daily_limit_per_device → 42901, nothing written;
-//   4. insert: the device always, user_id when logged in, created_at = the Clock's instant.
+//   5. insert: the device always, user_id when logged in and not in the deletion flow,
+//      created_at = the Clock's instant.
 // The two configuration values are read by the caller before the idempotency transaction holds a
 // pool connection (the reader may need another one from the same pool) and passed in.
 //
@@ -19,16 +23,36 @@ import { InvalidAmount, parseFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
 import type { Clock, HandlerResult } from '../../platform/index.ts';
 import { fieldsErrorEnvelope, newUuidV7 } from '../../platform/index.ts';
-import { chinaDayOf, instantAt, isUuid, retryAfterSeconds } from '../domain/rules.ts';
+import {
+  chinaDayOf,
+  instantAt,
+  isUuid,
+  recordedUserId,
+  retryAfterSeconds,
+  type AccountDeletionStatus,
+} from '../domain/rules.ts';
 import {
   countDeviceFeedback,
   insertFeedback,
   lockDeviceFeedback,
+  lockUserForShare,
 } from '../infra/feedback-store.ts';
 
 /** linking's read port: whether the link exists in the app (app.links), on the given handle. */
 export interface FeedbackLinkReader {
   linkInApp(handle: Kysely<DB>, appId: string, linkId: string): Promise<boolean>;
+}
+
+/**
+ * identity's read of an account's deletion status (users.status), on the given transaction after
+ * the row is locked; undefined when the user is not in the app.
+ */
+export interface FeedbackAccountReader {
+  deletionStatus(
+    trx: Transaction<DB>,
+    appId: string,
+    userId: string,
+  ): Promise<AccountDeletionStatus | undefined>;
 }
 
 /** The configuration as read before the transaction (defaults already applied). */
@@ -57,6 +81,7 @@ export interface FeedbackOutcome {
 export interface SubmitFeedbackDeps {
   readonly clock: Clock;
   readonly links: FeedbackLinkReader;
+  readonly accounts: FeedbackAccountReader;
 }
 
 /** BR-TEXT-14 fallback texts (clients show error.<code>); error-codes.yaml meaning. */
@@ -113,6 +138,18 @@ export async function submitFeedback(
     return { result: refusal(404, 30144, NO_LINK_MSG, traceId) };
   }
 
+  // Lock order users row → device advisory lock: the users row first, as identity's deletion
+  // cleanup takes it first; a submission waiting behind a cleanup then holds no device lock, so the
+  // same device's guest submissions are not queued behind the cleanup.
+  let userId: string | null = null;
+  if (input.userId !== null) {
+    const present = await lockUserForShare(trx, input.appId, input.userId);
+    const status = present
+      ? await deps.accounts.deletionStatus(trx, input.appId, input.userId)
+      : undefined;
+    userId = recordedUserId(input.userId, status);
+  }
+
   await lockDeviceFeedback(trx, input.appId, input.deviceId);
   const day = chinaDayOf(now);
   const count = await countDeviceFeedback(trx, input.appId, input.deviceId, day.start, day.end);
@@ -128,7 +165,7 @@ export async function submitFeedback(
     id,
     appId: input.appId,
     deviceId: input.deviceId,
-    userId: input.userId,
+    userId,
     platform: body.platform,
     productKey: input.productKey,
     itemRef: body.item_ref ?? null,

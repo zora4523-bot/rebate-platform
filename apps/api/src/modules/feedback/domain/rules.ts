@@ -66,3 +66,37 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function isUuid(value: string): boolean {
   return UUID.test(value);
 }
+
+/** identity's deletion status of an account (users.status deleting → processing, deleted → done). */
+export type AccountDeletionStatus = 'none' | 'processing' | 'done';
+
+/**
+ * The user_id a submission is recorded under (money r1 S1; 08 BR-ID-28 删除清单「商品反馈记录」).
+ * Read after the users row is locked FOR SHARE: an account in the deletion flow (processing / done)
+ * or missing in the app is recorded as a guest (no user_id, the device as always), so no row is
+ * left carrying the user_id once the deletion cleanup has run. A guest stays a guest.
+ */
+export function recordedUserId(
+  userId: string | null,
+  status: AccountDeletionStatus | undefined,
+): string | null {
+  if (userId === null) return null;
+  return status === 'none' ? userId : null;
+}
+
+/**
+ * The app of the request when the signing device belongs to it, else null (money r1 S2: a device of
+ * another app → 10403). The request's app is the token's app (stage ③ has matched it to X-App-Id),
+ * or for a guest the X-App-Id header; a guest request without a usable header has no other app
+ * than the device's.
+ */
+export function requestAppOfDevice(
+  deviceAppId: string,
+  principalAppId: string | undefined,
+  headerAppId: unknown,
+): string | null {
+  const requestApp =
+    principalAppId ??
+    (typeof headerAppId === 'string' && headerAppId !== '' ? headerAppId : deviceAppId);
+  return requestApp === deviceAppId ? requestApp : null;
+}

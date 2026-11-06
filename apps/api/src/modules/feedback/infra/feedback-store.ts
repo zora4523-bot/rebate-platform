@@ -1,6 +1,7 @@
 // B1-28p: feedback's only access to app.product_feedbacks (migration 0125; feedback is the table's
-// single writer). Raw SQL over the caller's transaction: the generated DB types gain the table with
-// the next `pnpm db:snapshot`, and every statement here names app.product_feedbacks in full.
+// single writer), plus the read lock of the submitting user's app.users row (lockUserForShare).
+// Raw SQL over the caller's transaction for app.product_feedbacks, every statement naming the
+// table in full.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`.
@@ -36,6 +37,32 @@ export async function lockDeviceFeedback(
 ): Promise<void> {
   const name = `feedback.product_feedbacks.device:${appId}:${deviceId.toLowerCase()}`;
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${name}, 0))`.execute(trx);
+}
+
+/**
+ * Money r1 S1 (BR-ID-28): the submitting user's app.users row FOR SHARE, held until the caller's
+ * commit or rollback; true when the row exists in the app. A read lock only (feedback never writes
+ * users), the same lock push token reporting takes (D10-318): it conflicts with the deletion
+ * cleanup's lock of the row (identity's lockUsersForUpdate, FOR NO KEY UPDATE) and with the
+ * status change to deleting, so the status read after it is the committed one and a cleanup can
+ * neither start nor commit while this submission is between that read and its commit; two
+ * submissions (FOR SHARE) and the foreign-key checks of rows referencing users (FOR KEY SHARE)
+ * never wait on it.
+ */
+export async function lockUserForShare(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<boolean> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('users')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('id', '=', userId)
+    .forShare()
+    .executeTakeFirst();
+  return row !== undefined;
 }
 
 /** The device's records with created_at in [start, end). */

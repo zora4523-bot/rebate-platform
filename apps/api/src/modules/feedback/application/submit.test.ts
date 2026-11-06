@@ -4,6 +4,7 @@ import type { DB } from '@couli/db';
 import { Kysely, PostgresDialect, type PostgresPool, type Transaction } from 'kysely';
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
+import type { AccountDeletionStatus } from '../domain/rules.ts';
 import { deleteFeedbackForUser } from './deletion.ts';
 import { submitFeedback, type FeedbackSubmission } from './submit.ts';
 
@@ -14,13 +15,17 @@ const LINK = '0199a3b4-5c6d-7e8f-9a0b-000000000023';
 const NOW = '2026-11-06T02:00:00.000Z';
 const TRACE = 'trace-b128p';
 
-function scripted(count: number) {
+function scripted(count: number, userPresent = true) {
   const queries: { text: string; values: unknown[] }[] = [];
   const client = {
     release: () => undefined,
     async query(text: string, values: unknown[] = []) {
       queries.push({ text, values });
-      const rows = /count\(\*\)/.test(text) ? [{ n: String(count) }] : [];
+      const rows = /count\(\*\)/.test(text)
+        ? [{ n: String(count) }]
+        : /from "app"\."users"/.test(text) && userPresent
+          ? [{ id: USER }]
+          : [];
       return { command: text.trim().split(/\s/)[0]!.toUpperCase(), rows, rowCount: rows.length };
     },
   };
@@ -51,11 +56,19 @@ function submission(overrides: Partial<FeedbackSubmission['body']> = {}): Feedba
   };
 }
 
-function deps(linkInApp = true) {
+function deps(linkInApp = true, status: AccountDeletionStatus | undefined = 'none') {
   const linkCalls: unknown[] = [];
+  const statusCalls: unknown[] = [];
   return {
     linkCalls,
+    statusCalls,
     deps: {
+      accounts: {
+        async deletionStatus(_trx: unknown, appId: string, userId: string) {
+          statusCalls.push([appId, userId]);
+          return status;
+        },
+      },
       clock: new FixedClock(NOW),
       links: {
         async linkInApp(_handle: unknown, appId: string, linkId: string) {
@@ -114,9 +127,14 @@ it('[AC-B1-28p] the count reaching the limit → 42901 with Retry-After to the +
   expect(outcome.result).toMatchObject({ status: 429, envelope: { code: 42901 } });
   // 10:00 +08:00 → 14 hours to midnight.
   expect(outcome.retryAfterSec).toBe(14 * 3600);
-  expect(queries.map((q) => q.text.trim().split(/\s/)[0])).toEqual(['SELECT', 'SELECT']);
-  expect(queries[0]!.text).toContain('pg_advisory_xact_lock');
-  expect(queries[1]!.values).toEqual([
+  expect(queries.map((q) => q.text.trim().split(/\s/)[0]!.toUpperCase())).toEqual([
+    'SELECT',
+    'SELECT',
+    'SELECT',
+  ]);
+  expect(queries[0]!.text).toMatch(/from "app"\."users" .* for share$/);
+  expect(queries[1]!.text).toContain('pg_advisory_xact_lock');
+  expect(queries[2]!.values).toEqual([
     APP,
     DEVICE,
     new FixedClock('2026-11-05T16:00:00.000Z').now(),
@@ -140,8 +158,8 @@ it('[AC-B1-28p] below the limit: lock, count, then one insert with the device, t
     data: { feedback_id: expect.any(String) },
     trace_id: TRACE,
   });
-  expect(queries).toHaveLength(3);
-  const insert = queries[2]!;
+  expect(queries).toHaveLength(4);
+  const insert = queries[3]!;
   expect(insert.text).toMatch(/^INSERT INTO app\.product_feedbacks/);
   expect(insert.values).toEqual([
     data.feedback_id,
@@ -179,4 +197,55 @@ it('[AC-B1-28p] the deletion step deletes by app and user only, whatever `at`', 
   expect(queries[0]!.text).toMatch(/^DELETE FROM app\.product_feedbacks/);
   expect(queries[0]!.text).toContain('user_id =');
   expect(queries[0]!.values).toEqual([APP, USER]);
+});
+
+it('[AC-B1-28p#32] a logged-in submission locks the users row FOR SHARE before the device lock, then reads the status on the same transaction', async () => {
+  const { trx, queries } = scripted(0);
+  const d = deps();
+  await submitFeedback(trx, submission(), { enabled: true, dailyLimit: 20 }, d.deps);
+  expect(queries[0]!.text).toMatch(
+    /^select "id" from "app"\."users" where "app_id" = \$1 and "id" = \$2 for share$/,
+  );
+  expect(queries[0]!.values).toEqual([APP, USER]);
+  expect(queries[1]!.text).toContain('pg_advisory_xact_lock');
+  expect(d.statusCalls).toEqual([[APP, USER]]);
+  expect(queries[3]!.values[3]).toBe(USER);
+});
+
+it('[AC-B1-28p#33] an account in the deletion flow (processing / done) is recorded as a guest: no user_id, the device as always', async () => {
+  for (const status of ['processing', 'done'] as const) {
+    const { trx, queries } = scripted(0);
+    const outcome = await submitFeedback(
+      trx,
+      submission(),
+      { enabled: true, dailyLimit: 20 },
+      deps(true, status).deps,
+    );
+    expect(outcome.result.status).toBe(200);
+    const insert = queries[3]!;
+    expect(insert.text).toMatch(/^INSERT INTO app\.product_feedbacks/);
+    expect(insert.values[2]).toBe(DEVICE);
+    expect(insert.values[3]).toBeNull();
+  }
+});
+
+it('[AC-B1-28p#34] a user missing in the app is recorded as a guest without reading the status', async () => {
+  const { trx, queries } = scripted(0, false);
+  const d = deps();
+  await submitFeedback(trx, submission(), { enabled: true, dailyLimit: 20 }, d.deps);
+  expect(d.statusCalls).toEqual([]);
+  expect(queries[3]!.values[3]).toBeNull();
+});
+
+it('[AC-B1-28p] a guest takes no users lock and reads no status', async () => {
+  const { trx, queries } = scripted(0);
+  const d = deps();
+  await submitFeedback(
+    trx,
+    { ...submission(), userId: null },
+    { enabled: true, dailyLimit: 20 },
+    d.deps,
+  );
+  expect(queries.some((q) => /"users"/.test(q.text))).toBe(false);
+  expect(d.statusCalls).toEqual([]);
 });
