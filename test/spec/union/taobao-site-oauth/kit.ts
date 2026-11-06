@@ -27,7 +27,7 @@ export const ACCESS = 'fixture-access-access-access';
 export const REFRESH = 'fixture-refresh-refresh-refresh';
 /** Marker inside error_description / raw answers: must never surface in a thrown error. */
 export const DESCRIPTION = 'fixture-upstream-description-text';
-export const APP_ID = 'fake-taobao-oauth-app';
+export const APP_ID = 'syn-app-id-0417';
 export const UNION_ACCOUNT_ID = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01';
 export const NOW = '2032-03-01T04:05:06.000Z';
 /** Time the stub token endpoint takes to answer (the clock is moved inside the transport). */
