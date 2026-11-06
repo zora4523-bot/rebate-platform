@@ -1,7 +1,16 @@
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it, vi } from 'vitest';
 import { tracing } from '../credit/kit.ts';
-import { TIMEOUT, capture, credited, databaseFixture, settled, touched, withSync } from './kit.ts';
+import {
+  MEMBER_ROLE,
+  TIMEOUT,
+  capture,
+  credited,
+  databaseFixture,
+  settled,
+  touched,
+  withSync,
+} from './kit.ts';
 
 const p = databaseFixture(createTestDatabase);
 
@@ -131,7 +140,7 @@ for (const sample of [
         const lines = (await read.lines()).filter((l) => l.ledger_type === 'CLAWBACK');
         const expected: string[] = [];
         for (const [part, subject, amount] of [
-          [`${app.userId}:self`, 'USER_BALANCE', sample.userDebit],
+          [`${app.userId}:${MEMBER_ROLE}`, 'USER_BALANCE', sample.userDebit],
           ['PLATFORM', 'COMMISSION_REVENUE', sample.platformDebit],
         ] as const) {
           if (amount === 0n) continue;

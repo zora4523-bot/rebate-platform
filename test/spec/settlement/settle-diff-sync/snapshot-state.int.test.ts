@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import { seedVersion, version } from '../../commission/snapshot/fixtures.ts';
 import { BILL_AT } from '../settlement-records/kit.ts';
 import {
+  MEMBER_ROLE,
   TIMEOUT,
   credited,
   databaseFixture,
@@ -38,7 +39,7 @@ it(
         booked_n_fen: 1000n,
       });
       expect((await read.events()).filter((e) => e.status === 'forfeited')).toMatchObject([
-        { user_id: app.userId, role: 'self', status: 'forfeited', reason: 'banned' },
+        { user_id: app.userId, role: MEMBER_ROLE, status: 'forfeited', reason: 'banned' },
       ]);
       const beforeLines = await read.lines();
       expect(
@@ -52,11 +53,13 @@ it(
           .reduce((sum, l) => addFen(sum, l.amount_fen), 0n),
       ).toBe(-1000n);
       expect((await read.vouchers()).filter((v) => v.voucher_kind === 'FORFEIT')).toMatchObject([
-        { uniq_key: `${read.orderRef}:PLATFORM:FORFEIT:${app.userId}:self` },
+        { uniq_key: `${read.orderRef}:PLATFORM:FORFEIT:${app.userId}:${MEMBER_ROLE}` },
       ]);
       expect(
         beforeLines
-          .filter((l) => l.uniq_key === `${read.orderRef}:PLATFORM:FORFEIT:${app.userId}:self`)
+          .filter(
+            (l) => l.uniq_key === `${read.orderRef}:PLATFORM:FORFEIT:${app.userId}:${MEMBER_ROLE}`,
+          )
           .map((l) => [l.subject, l.amount_fen])
           .sort(),
       ).toEqual([

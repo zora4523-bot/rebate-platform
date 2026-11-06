@@ -22,6 +22,9 @@ export { TIMEOUT, settled, touched, SETTLED_LATER, capture } from '../settlement
 export type { App, Worker } from '../settlement-records/kit.ts';
 export type SyncedOrder = ReturnType<Worker['order']>;
 
+// settlement-records/kit.ts 的 w.order(app) 使用会员自己的归属码，受益人角色为 share。
+export const MEMBER_ROLE = 'share';
+
 /** Observe the existing fixture's pino destination, without replacing application services. */
 export async function withSync(
   db: Kysely<DB>,
@@ -194,7 +197,7 @@ export function observations(db: Kysely<DB>, app: App, o: SyncedOrder) {
     const expected: string[] = [];
     for (const [part, subject, owner, debit] of [
       [
-        `${app.userId}:self`,
+        `${app.userId}:${MEMBER_ROLE}`,
         userSubject,
         userSubject === 'USER_BALANCE' ? app.userId : 'platform',
         userDebit,
@@ -281,7 +284,7 @@ export async function moveUserFunds(
       memo: null,
       orderKey: historical ? `pdd:${o.subOrderId}` : null,
       beneficiaryUserId: historical ? app.userId : null,
-      role: historical ? 'self' : null,
+      role: historical ? MEMBER_ROLE : null,
       voucherKind: type,
       entries: [
         {

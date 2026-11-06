@@ -2,6 +2,7 @@
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it, vi } from 'vitest';
 import {
+  MEMBER_ROLE,
   TIMEOUT,
   capture,
   credited,
@@ -138,7 +139,7 @@ for (const [ac, state] of [
         expect((await read.events()).filter((e) => e.status === 'forfeited')).toMatchObject([
           {
             user_id: app.userId,
-            role: 'self',
+            role: MEMBER_ROLE,
             status: 'forfeited',
             reason: state,
             created_at: w.clock.now(),
@@ -214,7 +215,7 @@ for (const [ac, state] of [
         expect(await read.obligations()).toMatchObject([
           {
             user_id: app.userId,
-            role: 'self',
+            role: MEMBER_ROLE,
             status: 'open',
             kind: 'deferred',
             opened_by: 'R10',

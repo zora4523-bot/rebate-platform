@@ -4,6 +4,7 @@ import { addFen } from '@couli/money';
 import { expect, it } from 'vitest';
 import { level, relation, user } from '../../commission/resolver/kit.ts';
 import {
+  MEMBER_ROLE,
   TIMEOUT,
   SETTLED_LATER,
   credited,
@@ -32,7 +33,7 @@ it(
       const lines = (await read.lines()).filter((l) => l.uniq_key.endsWith(':ADJ:2'));
       const expected: string[] = [];
       for (const [id, role, debit] of [
-        [app.userId, 'self', 200n],
+        [app.userId, MEMBER_ROLE, 200n],
         [direct, 'direct', 40n],
         [indirect, 'indirect', 20n],
       ] as const) {
@@ -70,7 +71,7 @@ it(
       expect(amounts).toEqual([
         { user_id: direct, role: 'direct', base_fen: 601n, amount_fen: 60n },
         { user_id: indirect, role: 'indirect', base_fen: 601n, amount_fen: 30n },
-        { user_id: app.userId, role: 'self', base_fen: 601n, amount_fen: 300n },
+        { user_id: app.userId, role: MEMBER_ROLE, base_fen: 601n, amount_fen: 300n },
       ]);
       await read.balanced();
     });
@@ -240,7 +241,7 @@ it(
       const version = (await o.row()).commission_version;
       expect([...new Set(lines.map((l) => l.uniq_key))].sort()).toEqual(
         [
-          `${read.orderRef}:${(await o.row()).user_id}:self:CLAWBACK:C${version}`,
+          `${read.orderRef}:${(await o.row()).user_id}:${MEMBER_ROLE}:CLAWBACK:C${version}`,
           `${read.orderRef}:PLATFORM:CLAWBACK:C${version}`,
         ].sort(),
       );
