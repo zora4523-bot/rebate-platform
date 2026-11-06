@@ -53,9 +53,14 @@ import {
   type VisualPage,
 } from './pages.ts';
 
-/** antd / rc-motion classes present while an enter or leave motion runs. */
+/**
+ * antd / rc-motion classes present only while a motion runs: the motion name itself
+ * (ant-zoom-*, ant-fade-*, ant-move-*, ant-slide-*, *-motion-*) and the phase classes
+ * (-appear / -enter / -leave followed by -prepare / -start / -active). A class that only
+ * ends in -appear / -enter / -leave (e.g. the dashboard's static `dashboard-enter`) is not motion.
+ */
 const MOTION =
-  /(?:^|\s)ant-(?:zoom|fade|move|slide)\b|-(?:appear|enter|leave)(?:-|\s|$)|-motion\b|-motion-/;
+  /(?:^|\s)ant-(?:zoom|fade|move|slide)\b|-motion-|-(?:appear|enter|leave)-(?:prepare|start|active)(?=\s|$)/;
 
 let root: Root | undefined;
 let auth: AdminAuthProvider | undefined;
