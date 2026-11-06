@@ -11,7 +11,7 @@
 -- - id is a bigint identity (GENERATED ALWAYS: the identity sequence needs no grant).
 -- - user_id is the marked linked member, source_user_id the written-off member, source_ref the
 --   write-off candidate's id (app.bad_debt_writeoffs.id as text), dimension the link that matched:
---   id_no (same verified real name), device (a session on a device row whose device_hash is that of
+--   id_no (same verified real name; reserved, not written yet: FU-BAD-DEBT-LINKED-REALNAME), device (a session on a device row whose device_hash is that of
 --   a device of the written-off member's sessions; a reinstall registers a new row with the same
 --   hash) or payout_account (an alipay_hmac or bank_card_hmac shared by any payout_accounts rows of
 --   the two members, is_current=false history rows too). Only the dimension is kept: no plaintext,
@@ -33,6 +33,9 @@
 -- payout_accounts_app_id_bank_card_hmac_idx serve one member's rows and the rows sharing an HMAC
 -- (all rows, current or not; NULL HMACs are left out). New named indexes only; no existing
 -- index, constraint or trigger changes.
+-- Locking: these four indexes are built without CONCURRENTLY, so writes to app.devices and
+-- app.payout_accounts are blocked while they are built. Once live, any later index of this kind
+-- must be built with CREATE INDEX CONCURRENTLY in its own migration.
 -- No trigger is added (db/AGENTS.md rule 8).
 --
 -- Grants: couli_app gets SELECT and INSERT only (append only: no UPDATE, DELETE or TRUNCATE).

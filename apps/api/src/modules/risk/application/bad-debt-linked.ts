@@ -5,8 +5,11 @@
 // - ledger's bad-debt approval calls mark() on its own transaction, only when it writes the
 //   BAD_DEBT_WRITEOFF voucher (not on CANCELLED, not when the frozen check refuses); app.module
 //   hands the marker to ledger.
+// - Same real name (id_no) is not done in this phase (orchestrator D10-767): it would have to read
+//   the prior identities kept by realname corrections, a privacy purpose extension; follow-up
+//   FU-BAD-DEBT-LINKED-REALNAME, not scheduled. The table still accepts dimension 'id_no' for it;
+//   this writer never writes it.
 // - Linked accounts, same app, the written-off user excluded, one row per (user, dimension):
-//   id_no: a verified realname with the written-off user's (verified) id_no_hmac;
 //   device: the devices of the written-off user's sessions (revoked ones too) are taken by
 //   device_hash (a reinstall registers a new devices row with the same hash); another user with a
 //   session (revoked ones too) on any devices row of the app with that hash; never devices.user_id;
@@ -22,7 +25,7 @@ import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 
-/** risk_linked_marks.dimension. */
+/** risk_linked_marks.dimension ('id_no' is reserved for FU-BAD-DEBT-LINKED-REALNAME, not written). */
 export type BadDebtLinkedDimension = 'id_no' | 'device' | 'payout_account';
 
 export interface BadDebtLinkedMarkInput {
@@ -50,14 +53,6 @@ export interface BadDebtLinkedMarkerOptions {
 function linkedMembers(input: BadDebtLinkedMarkInput) {
   const { appId, sourceUserId } = input;
   return sql`
-    SELECT other.user_id, 'id_no'::text AS dimension
-    FROM app.realname mine
-    JOIN app.realname other
-      ON other.app_id = mine.app_id AND other.id_no_hmac = mine.id_no_hmac
-    WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
-      AND mine.status = 'verified' AND other.status = 'verified'
-      AND other.user_id <> mine.user_id
-    UNION
     SELECT other.user_id, 'device'::text AS dimension
     FROM app.sessions mine
     JOIN app.devices mine_device

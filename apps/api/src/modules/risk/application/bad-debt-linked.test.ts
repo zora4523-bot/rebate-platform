@@ -54,16 +54,21 @@ async function insertText(): Promise<string> {
   return insert!.sql.replace(/\s+/g, ' ');
 }
 
-it('[AC-B2-12g#1] 三个维度都按同 app、排除本人取关联账户：同实名 verified、会话设备、收款账号 HMAC', async () => {
+it('[AC-B2-12g#1] 两个维度都按同 app、排除本人取关联账户：会话设备、收款账号 HMAC', async () => {
   const text = await insertText();
-  for (const dimension of ['id_no', 'device', 'payout_account']) {
+  for (const dimension of ['device', 'payout_account']) {
     expect(text).toContain(`'${dimension}'::text`);
   }
-  expect(text).toMatch(/mine\.status = 'verified' AND other\.status = 'verified'/);
   expect(text).not.toMatch(/revoked_at/);
-  // id_no, device, payout_account by alipay_hmac and by bank_card_hmac.
-  expect(text.match(/other\.user_id <> mine\.user_id/g)).toHaveLength(4);
-  expect(text.match(/mine\.app_id = \$\d+ AND mine\.user_id = \$\d+::uuid/g)).toHaveLength(4);
+  // device, payout_account by alipay_hmac and by bank_card_hmac.
+  expect(text.match(/other\.user_id <> mine\.user_id/g)).toHaveLength(3);
+  expect(text.match(/mine\.app_id = \$\d+ AND mine\.user_id = \$\d+::uuid/g)).toHaveLength(3);
+});
+
+it('[AC-B2-12g#1] 同实名本期不做（FU-BAD-DEBT-LINKED-REALNAME）：不写 id_no，不读 realname 与旧身份', async () => {
+  const text = await insertText();
+  expect(text).not.toContain("'id_no'");
+  expect(text).not.toMatch(/realname|prior_identities|id_no_hmac/);
 });
 
 it('[AC-B2-12g#12] 同设备按 device_hash：被核销用户会话（含已吊销）的设备行取哈希，同 app 同哈希的任一设备行上有会话的其他用户；不读 devices.user_id', async () => {
