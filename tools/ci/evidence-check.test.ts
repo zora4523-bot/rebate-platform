@@ -2456,3 +2456,69 @@ it('[CT-06zzzg] a rule-test file whose every change lies in its declared blocks 
   );
   expect(req(same)).toEqual({ required: true, expected: [MOD_FILE] });
 });
+
+it('[CT-06zzzg] Codex r1 S2: a ledger only at the PR head never applies modify_existing: the file stays expected and the check fails', () => {
+  // The trusted root has no B2-09v ledger; the head adds one with modify_existing.
+  const dir = join(SCRATCH, 'trusted-modify-absent');
+  for (const file of ['tools/guard/protected-paths.json', 'ops/risk-map.yaml']) {
+    write(dir, { [file]: readFileSync(join(REPO, file), 'utf8') });
+  }
+  write(dir, {
+    'tools/guard/legacy-tasks.json': JSON.stringify({ baseline: 'fixture', tasks: [] }),
+  });
+  const headLedger = modLedger('tighten_only')
+    .replace(
+      `paths:\n  - '${MOD_FILE}'`,
+      "paths:\n  - 'apps/api/src/**'\ntest_paths:\n  - 'test/spec/payout/**'",
+    )
+    .replace('tester: none', 'tester: codex');
+  const B = 'test/spec/payout/b.test.ts';
+  git(modRepo, ['checkout', '-q', '-B', 'mod-s2', modBase]);
+  write(modRepo, {
+    'ops/tasks/B2-09v.yaml': headLedger,
+    [MOD_FILE]: modSource(MOD_NEW),
+    [B]: "import { expect, it } from 'vitest';\nit('[AC-B] b', () => { expect(1).toBe(2); });\n",
+  });
+  git(modRepo, ['add', '-A']);
+  git(modRepo, ['commit', '-q', '-m', 'test(spec): A changed, B added']);
+  const spec = git(modRepo, ['rev-parse', 'HEAD']);
+  const specTree = git(modRepo, ['rev-parse', `${spec}^{tree}`]);
+  const tree = git(modRepo, ['rev-parse', 'HEAD:test/spec']);
+  const doc = {
+    ...modEvidence('omit')(tree),
+    spec_commit: spec,
+    runs: [
+      {
+        mode: 'container',
+        script: 'red',
+        exit_code: 0,
+        commit: null,
+        tree: specTree,
+        prop_seed: 1,
+        red_tests: [`${B} > [AC-B] b`],
+        expected: [B],
+      },
+    ],
+  };
+  const text = JSON.stringify(doc);
+  // A stays expected: the head's ledger is not read for modify_existing.
+  expect(
+    redRequirement(
+      { prDir: modRepo, base: modBase, head: spec, headRef: 'task/B2-09v', trusted: dir },
+      'B2-09v',
+      modBase,
+      text,
+    ),
+  ).toEqual({ required: true, expected: [B, MOD_FILE] });
+  write(modRepo, { 'ops/evidence/B2-09v.json': `${JSON.stringify(doc, null, 2)}\n` });
+  git(modRepo, ['add', '-A']);
+  git(modRepo, ['commit', '-q', '-m', 'evidence']);
+  const head = git(modRepo, ['rev-parse', 'HEAD']);
+  // No label, no record of each block: the red run does not cover A, the check fails.
+  const report = modCheck(head, dir);
+  expect(report.ok).toBe(false);
+  expect(report.approval_wanted).toBe(false);
+  expect(report.problems.join('\n')).toContain(
+    `runs[0].expected: does not cover ${MOD_FILE}, a rule-test file the task added`,
+  );
+});

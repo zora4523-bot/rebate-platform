@@ -1499,11 +1499,13 @@ export function redRequirement(
   ).map((r) => r.file);
   // CT-06zzzg (D10-701): a file whose every change lies in its declared modify_existing blocks is
   // left out the same way (red-check.ts calls the same function); the label and the record of
-  // each block are still required (evidenceProblems).
+  // each block are still required (evidenceProblems). Codex r1 S2: the entries come from the
+  // trusted root's ledger only (readTrustedLedger, as checkEvidence reads them for the label and
+  // the record); a ledger the PR head adds never leaves a file out.
   const modifiedOut = modifiedOnlyFiles(
     all.filter((f) => !left.has(f) && !outsideOut.includes(f)),
     read,
-    ledger.modify_existing,
+    readTrustedLedger(input, task)?.modify_existing ?? [],
   ).map((r) => r.file);
   // Review r1 S2-1: renames that hit a rule-test file of the task need the reviewer's confirmation.
   const hit = renamesHit(all, read, ledger.renames);
