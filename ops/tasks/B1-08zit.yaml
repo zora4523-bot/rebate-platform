@@ -1,4 +1,4 @@
-id: B1-08zj
+id: B1-08zit
 repo: rebate-platform
 title: test-change B1-08zi 前置：config-registry 末尾登记 orders.jd.refunded_quantity_r9_enabled（默认关、无种子），冻结注册表用例只追加 ORDERS_JD_UNSEEDED（D10-873 / D10-876，同 B2-12e）
 type: test-change
@@ -17,7 +17,7 @@ paths:
   - 'test/spec/content/config-settle/writes.int.test.ts'
   - 'test/spec/content/invite-reward-config/registry.test.ts'
   - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
-  - 'ops/tasks/B1-08zj.yaml'
+  - 'ops/tasks/B1-08zit.yaml'
 impl: claude
 tester: none
 accept:
