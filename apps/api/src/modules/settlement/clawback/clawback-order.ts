@@ -903,8 +903,7 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     // B2-04zk (BR-CALC-15): an R9 valued on a rights deduction moves no order column, so the sync
     // never moved the version: move it here with the booked pair, then write its rows on N_new.
     const estimates = deps.estimates;
-    const repriced =
-      estimates !== undefined && transition === 'R9' && selected.source === 'rights';
+    const repriced = estimates !== undefined && transition === 'R9' && selected.source === 'rights';
     const written = await casClawbackOrder(trx, order, {
       to: step.to,
       booked_base_fen: plan.booked_after.booked_base_fen,
