@@ -236,9 +236,11 @@ export function createSettleAdjustGenerator(
   }
 
   /**
-   * The rows of the approval route. A member's row is what they would get on top of what they have
-   * and are owed (new share − net − pending obligation): a frozen or appealing member is written as
-   * usual (the state is judged again at approval, D10-770 ②); a member whose share the plan gives
+   * The rows of the approval route. A member's row is the new share less the net already credited
+   * (BR-FUND-08 / 09; the approval credits that whole difference and closes an open obligation, so
+   * a deferred amount is part of it, never taken off it — money review r1 S0): a frozen or appealing
+   * member is written as usual (the state is judged again at approval, D10-770 ②); a member whose
+   * share the plan gives
    * the platform (banned, deleting / deleted, minor, forfeited) gets no row. The platform row is
    * the plan's platform difference, either sign.
    */
@@ -248,7 +250,7 @@ export function createSettleAdjustGenerator(
     for (const r of plan.beneficiaries) {
       const b = before.get(identity(r.user_id, r.role));
       if (b === undefined || b.status === 'forfeited' || r.forfeit_reason !== null) continue;
-      const diff = subFen(subFen(r.entitlement_fen, b.net_fen), r.pending_before_fen);
+      const diff = subFen(r.entitlement_fen, b.net_fen);
       if (diff > 0n) rows.push({ userId: r.user_id, role: r.role, diffFen: diff });
     }
     if (plan.platform_delta_fen !== 0n) {
@@ -459,6 +461,7 @@ export function createSettleAdjustGenerator(
       let orders = 0;
       let candidates = 0;
       let superseded = 0;
+      let failed = 0;
       for (const orderId of orderIds) {
         // A batch created by a transaction that rolled back never existed.
         const batchBefore = batch.id;
@@ -478,6 +481,7 @@ export function createSettleAdjustGenerator(
             );
             continue;
           }
+          failed += 1;
           logger.error(
             { app_id: appId, order_id: orderId, err: error },
             'settle adjust: order failed, its candidates were not written',
@@ -489,6 +493,12 @@ export function createSettleAdjustGenerator(
           { app_id: appId, platform, batch_id: batch.id, orders, candidates, superseded },
           'settle adjust: candidates generated',
         );
+      }
+      // Money review r1 S2: the other orders are done (each committed on its own); a run with a
+      // failed order fails as a whole, so the job is recorded failed and delivered again — the
+      // orders already written are skipped then (same version, pending).
+      if (failed > 0) {
+        throw new Error(`settle adjust: ${failed} order(s) failed, the run is to be retried`);
       }
       return { batchId: batch.id, orders, candidates, superseded };
     },
