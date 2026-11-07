@@ -49,3 +49,5 @@
 - admin-channels/catalog.ts 加 `SETTLE_ADJUSTED: { defaultChannels: ['push', 'inbox'], variables: { self: ['amount', 'reason'],
   share: ['amount', 'reason'], invite: ['amount'] } }`；已有 admin-channels / 前端渠道页测试若枚举全部编码需随之核对。
 - R9 扣回（载荷无 reason）的自购 / 分享句只钉开头与金额，原因写法未定（#13）。
+
+测试第 2 轮（编排 §9.5）：settle-adjusted-message/render.test.ts #32 的「不带原因」检查原为正文不含任何原因标题，但 SETTLE_DIFF 标题「结算金额调整」是固定措辞「按结算金额调整」的子串，任何实现都过不了；改为正文不含「：」+ 原因标题（附原因的写法），正文逐字断言不变，其余用例未动。

@@ -75,7 +75,7 @@ it.each([
     });
     expect(isLedger(message?.route)).toBe(true);
     expect(JSON.stringify(message)).not.toContain(ORDER_ID);
-    for (const title of Object.values(SUB_TYPES)) expect(message?.body).not.toContain(title);
+    for (const title of Object.values(SUB_TYPES)) expect(message?.body).not.toContain(`：${title}`);
   },
 );
 
