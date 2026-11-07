@@ -11578,10 +11578,12 @@ export interface components {
             /**
              * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
              *     when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
-             *     OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
-             *     null or absent shows the parent title only. Read-only: written by the server (automatic
-             *     mapping or a manual change in the admin). Optional: added to an existing /v1 shape
-             *     (contracts/README rule 8).
+             *     OrderReasonSub). When set, the App shows
+             *     「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」 (the sub-reason's desc
+             *     replaces the parent reason's desc); null or absent (「无」) shows the parent reason's title
+             *     and desc as BR-TEXT-05 says (order_reason.<reason>.title / .desc). Read-only: written by
+             *     the server (automatic mapping or a manual change in the admin). Optional: added to an
+             *     existing /v1 shape (contracts/README rule 8).
              */
             reason_sub?: components["schemas"]["OrderReasonSub"] | null;
             est_rebate_fen: components["schemas"]["NullableFen"];
@@ -11712,10 +11714,12 @@ export interface components {
             /**
              * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
              *     when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
-             *     OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
-             *     null or absent shows the parent title only. Read-only: written by the server (automatic
-             *     mapping or a manual change in the admin). Optional: added to an existing /v1 shape
-             *     (contracts/README rule 8).
+             *     OrderReasonSub). When set, the App shows
+             *     「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」 (the sub-reason's desc
+             *     replaces the parent reason's desc); null or absent (「无」) shows the parent reason's title
+             *     and desc as BR-TEXT-05 says (order_reason.<reason>.title / .desc). Read-only: written by
+             *     the server (automatic mapping or a manual change in the admin). Optional: added to an
+             *     existing /v1 shape (contracts/README rule 8).
              */
             reason_sub?: components["schemas"]["OrderReasonSub"] | null;
             est_rebate_fen: components["schemas"]["NullableFen"];
@@ -17769,8 +17773,10 @@ export interface components {
             /** @description orders.reason (BR-TEXT-05); null when none. */
             reason: components["schemas"]["OrderReasonCode"] | null;
             /**
-             * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-818): what the App
-             *     shows after the reason's title; null when there is none (「无」). Optional: absent is the
+             * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-818): when set, the
+             *     App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」 (the
+             *     sub-reason's desc replaces the parent reason's desc); null when there is none (「无」),
+             *     and the App then shows the parent reason's title and desc. Optional: absent is the
              *     same as null (CT-24zw adds it ahead of the server). Changed by hand with POST
              *     /admin/v1/orders/{order_id}/reason-sub.
              */
