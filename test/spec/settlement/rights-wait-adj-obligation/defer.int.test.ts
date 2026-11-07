@@ -128,3 +128,54 @@ for (const [ac, state] of [
     TIMEOUT,
   );
 }
+
+// Self held at credit (frozen → first_credit obligation, pending 425), then released to normal; the
+// R5a credit of the obligation has not run yet (BR-FUND-09 负差一路「已解除、等补记的份额，留作待补记
+// 额」). Record 600: same money as #7 — self's share 255 stays pending under the same obligation, not
+// paid out by the R10; direct −34, indirect −17, platform −179; UNION_RECEIVABLE 575 → 345.
+it(
+  '[AC-B2-04zza#18] 入账时本人冻结（first_credit 义务、待补记 425），之后恢复 normal 但补记尚未执行；维权等佣金中联盟新结算记录 600 负差 → R10 记账（直推 −34、间推 −17、平台 −179），本人不写凭证、余额仍 0，义务保持未完成（同一行不变），待补记额按新 booked 510 重算为 255（应收 575 → 345）；不进候选、无 forfeited 事件；同事务关闭维权记录，booked 510 / 600、仍 CREDITED',
+  async () => {
+    const h = await harness(p.db);
+    const { o, waitingId } = await h.waiting({ people: people({ self: 'frozen' }) }, (seeded) =>
+      h.setState(seeded, 'self', 'normal'),
+    );
+    const obligations = await h.orderObligations(o);
+    expect(obligations).toEqual([
+      expect.objectContaining({
+        user_id: o.user('self'),
+        role: 'self',
+        kind: 'first_credit',
+        status: 'open',
+      }),
+    ]);
+    expect(await h.balance(o.user('self'))).toBe(0n);
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(575n);
+    const keys = await h.orderVoucherKeys(o);
+    const events = await h.newBeneficiaryEvents(o);
+
+    h.clock.set(LATER);
+    const { result } = await h.arrive(o, { settleAfter: 600n, newSeq: 3 });
+
+    expect(result).toMatchObject({
+      outcome: 'settle_adjusted',
+      transition: 'R10',
+      orderKey: o.orderKey,
+      bookedBaseFen: 510n,
+      bookedNFen: 600n,
+    });
+    await h.expectAdjusted(o, keys, 3, { users: { direct: 34n, indirect: 17n }, platform: 179n });
+    expect(await h.balance(o.user('self'))).toBe(0n);
+    expect(await h.balance(o.user('direct'))).toBe(51n);
+    expect(await h.balance(o.user('indirect'))).toBe(25n);
+    // BR-FUND-19 ⑤: UNION_RECEIVABLE = booked_n 600 − Σ pending 255.
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(345n);
+    expect(await h.orderObligations(o)).toEqual(obligations);
+    expect(await h.newBeneficiaryEvents(o)).toEqual(events);
+    expect(await h.candidates(o)).toEqual([]);
+    await h.expectBooked(o, 510n, 600n);
+    await h.expectAnswered(o, waitingId);
+    expect(h.heldAlerts()).toEqual([]);
+  },
+  TIMEOUT,
+);

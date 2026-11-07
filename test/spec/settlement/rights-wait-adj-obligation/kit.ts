@@ -30,7 +30,7 @@ import {
 } from '../../../../apps/api/src/modules/orders/index.ts';
 import type { ClawbackResult } from '../../../../apps/api/src/modules/settlement/clawback/index.ts';
 import type { CreditRole } from '../../../../apps/api/src/modules/settlement/credit/index.ts';
-import { platformIncreaseLines } from '../clawback/kit.ts';
+import { bounded, platformIncreaseLines } from '../clawback/kit.ts';
 import type { PersonSpec } from '../credit/kit.ts';
 import {
   LATER,
@@ -46,11 +46,15 @@ export {
   LATER,
   NOW,
   TIMEOUT,
+  creditKey,
   databaseFixture,
+  platformKey,
+  platformLines,
   receivable,
   userClawbackLines,
+  userCreditLines,
 } from '../rights-credit/kit.ts';
-export { platformIncreaseLines } from '../clawback/kit.ts';
+export { bounded, deferred, platformIncreaseLines, waitBlocked } from '../clawback/kit.ts';
 export type { SeededOrder } from '../rights-credit/kit.ts';
 export type { PersonSpec } from '../credit/kit.ts';
 
@@ -94,6 +98,10 @@ export interface ArrivalSpec {
   readonly refundedQuantityAfter?: number;
   /** Runs on the sync transaction after onUpdated answered (e.g. throws to roll it back). */
   readonly after?: (trx: Transaction<DB>) => Promise<void>;
+  /** Executor of the sync transaction (default: the shared pool). */
+  readonly via?: Kysely<DB>;
+  /** Called with the backend pid first thing in the sync transaction (lock timeouts set). */
+  readonly onPid?: (pid: number) => void;
 }
 
 export interface Arrival {
@@ -148,7 +156,9 @@ export async function harness(db: Kysely<DB>) {
   /** One order sync carrying the union's new settlement record, then the clawback's onUpdated. */
   async function arrive(o: SeededOrder, spec: ArrivalSpec): Promise<Arrival> {
     const clawback = h.boot();
-    return db.transaction().execute(async (trx) => {
+    const onPid = spec.onPid;
+    return (spec.via ?? db).transaction().execute(async (trx) => {
+      if (onPid !== undefined) onPid(await bounded(trx));
       await lockOrderKey(trx, o.platform, o.subOrderId);
       const before = await trx
         .selectFrom('orders')
@@ -228,11 +238,15 @@ export async function harness(db: Kysely<DB>) {
 
   /**
    * Historical ledger state only (as B2-04zi), booked pair unchanged, no balance edited: an earlier
-   * voucher of this order that took `amount` of the beneficiary's net.
+   * voucher of this order that took `amount` of the beneficiary's net. Its uniq_key has the
+   * production shape (`{order_key}:{user_id}:{role}:…`), so the order-scoped reads of this kit
+   * (orderVoucherKeys, orderSubjectNet) count it as the ledger's order nets do.
    *   'revenue'    — a CLAWBACK whose amount went to the platform (debit USER_BALANCE / credit
-   *                  COMMISSION_REVENUE): platform net + amount, UNION_RECEIVABLE unchanged.
-   *   'receivable' — a SETTLE_ADJUST back to UNION_RECEIVABLE whose amount stays pending under a
-   *                  deferred obligation (seed it with seedDeferred; BR-FUND-19 ⑤ then holds).
+   *                  COMMISSION_REVENUE), key `…:CLAWBACK:R{id}`: platform net + amount,
+   *                  UNION_RECEIVABLE unchanged.
+   *   'receivable' — a SETTLE_ADJUST back to UNION_RECEIVABLE on the order's latest seq, key
+   *                  `…:ADJ:{seq}`, whose amount stays pending under a deferred obligation (seed it
+   *                  with seedDeferred; BR-FUND-19 ⑤ then holds).
    */
   async function pastVoucher(
     o: SeededOrder,
@@ -242,12 +256,15 @@ export async function harness(db: Kysely<DB>) {
   ): Promise<void> {
     const type = to === 'revenue' ? 'CLAWBACK' : 'SETTLE_ADJUST';
     const subType = to === 'revenue' ? 'PART_REFUND' : 'SETTLE_DIFF';
+    const prefix = `${o.orderKey}:${o.user(role)}:${role}`;
+    const uniqKey =
+      to === 'revenue' ? `${prefix}:CLAWBACK:R${randomUUID()}` : `${prefix}:ADJ:${String(o.seq)}`;
     await db.transaction().execute(async (trx) => {
       const [account] = await h.ledger.lockBalances(trx, { appId, userIds: [o.user(role)] });
       if (account === undefined) throw new Error('rights-wait-adj harness: user has no account');
       await h.ledger.post(trx, {
         appId,
-        uniqKey: `fixture:${randomUUID()}`,
+        uniqKey,
         bizType: to === 'revenue' ? 'ORDER_CLAWBACK' : 'ORDER_SETTLE_ADJUST',
         bizId: randomUUID(),
         operator: 'system',
@@ -281,7 +298,7 @@ export async function harness(db: Kysely<DB>) {
     });
   }
 
-  /** Synthetic setup: an open deferred obligation (BR-FUND-04 ⑫) of an earlier R10 on seq 2. */
+  /** Synthetic setup: an open deferred obligation (BR-FUND-04 ⑫) of an earlier R10 on o.seq. */
   async function seedDeferred(o: SeededOrder, role: CreditRole): Promise<string> {
     const id = randomUUID();
     await db
@@ -294,7 +311,7 @@ export async function harness(db: Kysely<DB>) {
         role,
         kind: 'deferred',
         opened_by: 'R10',
-        opened_ref: 'S2',
+        opened_ref: `S${String(o.seq)}`,
         origin_ledger_type: 'SETTLE_ADJUST',
         origin_sub_type: 'SETTLE_DIFF',
         split_ref: 'commission_version:1',
@@ -332,7 +349,7 @@ export async function harness(db: Kysely<DB>) {
 
   /**
    * The order's vouchers are `before` plus exactly one R10 SETTLE_ADJUST set on `seq` with the
-   * given lines; no CLAWBACK voucher (not a reverse event).
+   * given lines; no new CLAWBACK voucher (not a reverse event; historical ones stay as they were).
    */
   async function expectAdjusted(
     o: SeededOrder,
@@ -358,7 +375,8 @@ export async function harness(db: Kysely<DB>) {
       );
     }
     expect(await h.orderVoucherKeys(o)).toEqual([...before, ...added].sort());
-    expect(await h.clawbackKeys(o)).toEqual([]);
+    const pastClawbacks = before.filter((k) => k.includes(':CLAWBACK:')).sort();
+    expect(await h.clawbackKeys(o)).toEqual(pastClawbacks);
     for (const key of added) {
       const types = await h.voucherTypes(key);
       expect(types, key).toHaveLength(1);
