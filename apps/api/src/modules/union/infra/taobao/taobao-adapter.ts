@@ -57,6 +57,9 @@ import {
   type RefundQueryOpt,
   type ResolvedLink,
   type SearchQuery,
+  type ShopConvertReq,
+  type ShopConvertResult,
+  type ShopConvertSources,
   type TaobaoShareCode,
   type TimeWindow,
   type UnionAdapter,
@@ -381,6 +384,12 @@ export class TaobaoUnionAdapter implements UnionAdapter {
   get orderSources(): boolean {
     return this.#orderSource !== undefined && this.#orderSlots !== undefined;
   }
+
+  /**
+   * B1-04zzt (S-17 S17-u2, D10-806): ['dataoke'] only with the 大淘客 client injected (see
+   * shop-convert.ts); absent otherwise.
+   */
+  declare readonly shopConvertSources?: ShopConvertSources;
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -893,6 +902,18 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     });
     // BR-PRICE-11：quoted_at 取收到响应后的注入时钟。
     return mapPrivilegeLink(data, this.#clock.now(), this.#warn);
+  }
+
+  /** B1-04zzt: 大淘客 shop convert (see shop-convert.ts). */
+  async convertShop(
+    req: ShopConvertReq,
+    identity: UnionIdentity,
+    ctx: CallCtx,
+  ): Promise<ShopConvertResult> {
+    void req;
+    void identity;
+    void ctx;
+    throw new Error('NotImplemented: convertShop');
   }
 
   /**
