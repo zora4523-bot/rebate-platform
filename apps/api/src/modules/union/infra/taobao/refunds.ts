@@ -86,9 +86,7 @@ function refundTradeId(row: unknown): string | null {
  * null when there is none (data not an object, result not an array). Throws when the body is not
  * JSON.
  */
-function refundTree(
-  body: string,
-): {
+function refundTree(body: string): {
   readonly tree: Record<string, unknown>;
   readonly data: Record<string, unknown>;
   readonly list: unknown[];
