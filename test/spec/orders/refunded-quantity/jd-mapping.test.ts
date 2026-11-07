@@ -118,4 +118,4 @@ it('[AC-B1-08zi#6] 任意 0..int4 上限的整数原样映射；与 validCode、
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 900_000);

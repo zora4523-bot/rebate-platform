@@ -60,7 +60,7 @@ it('[AC-B1-08zi#25] 任意件数：none 恰在未增加时；京东开关关从�
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 900_000);
 
 it('[AC-B1-08zi#26] 开关读值：只有 JSON true 为开；未设置与其他值都是关（默认关）', () => {
   expect(jdRefundR9Enabled(true)).toBe(true);

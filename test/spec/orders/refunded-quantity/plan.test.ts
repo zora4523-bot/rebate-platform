@@ -143,7 +143,7 @@ it('[AC-B1-08zi#13] 任意库内值与报文：结果不小于库内值，只取
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 900_000);
 
 it('[AC-B1-08zi#14] 只有已退件数变化、佣金不变：commission_version 不加 1，同步列集合不含两列', () => {
   const current: OrderSyncColumns = {

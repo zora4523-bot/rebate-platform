@@ -165,7 +165,7 @@ it(
 );
 
 it.each(['order.clawed_back', 'order.updated'] as const)(
-  '[AC-B1-08zi#36] 入账后同一次同步已退 0 → 1、结算 1000 → 600，%s 入队失败：件数、已退件数、佣金、版本与资金效果全部回滚；恢复后重投只产生一次 R9',
+  '[AC-B1-08zi#36] 入账后同一次同步件数 3 → 4、已退 0 → 1、结算 1000 → 600，%s 入队失败：件数、已退件数、佣金、版本与资金效果全部回滚；恢复后重投只产生一次 R9',
   async (failing) => {
     await withSync(p.db, async (w) => {
       const { o, read } = await creditedWith(p.db, w, { quantity: 3, refunded_quantity: 0 });
@@ -179,7 +179,7 @@ it.each(['order.clawed_back', 'order.updated'] as const)(
       const moneyBefore = await read.money();
       const totalsBefore = await o.totals();
       const recordsBefore = await o.records();
-      const report = settled(600n, { ...touched(1), refunded_quantity: 1 });
+      const report = settled(600n, { ...touched(1), quantity: 4, refunded_quantity: 1 });
 
       const publish = w.events.publish.bind(w.events);
       const failure = new Error('synthetic downstream failure');
@@ -191,6 +191,7 @@ it.each(['order.clawed_back', 'order.updated'] as const)(
         expect(await capture(() => o.report(report))).toEqual({ ok: false, error: failure });
         // 订单行逐列不变：quantity、refunded_quantity、at_credit、settle_commission_fen、commission_version、row_version。
         expect(await o.row()).toEqual(rowBefore);
+        expect(await o.row()).toMatchObject({ quantity: 3, refunded_quantity: 0 });
         expect(await read.money()).toEqual(moneyBefore);
         expect(await o.totals()).toEqual(totalsBefore);
         expect(await o.records()).toEqual(recordsBefore);
@@ -202,7 +203,7 @@ it.each(['order.clawed_back', 'order.updated'] as const)(
       const after = await o.row();
       expect(after).toMatchObject({
         rebate_status: 'CREDITED',
-        quantity: 3,
+        quantity: 4,
         refunded_quantity: 1,
         refunded_quantity_at_credit: 0,
         settle_commission_fen: 600n,
@@ -219,6 +220,7 @@ it.each(['order.clawed_back', 'order.updated'] as const)(
       await o.sync(report);
       expect(await read.money()).toEqual(once);
       expect(await o.row()).toMatchObject({
+        quantity: 4,
         refunded_quantity: 1,
         commission_version: after.commission_version,
       });
