@@ -16,6 +16,7 @@ import {
   type Transaction,
 } from 'kysely';
 import { expect, it } from 'vitest';
+import { bookedBaseOrderFacts, type BookedBaseReader } from '../../../app.module.ts';
 import { FixedClock } from '../../platform/index.ts';
 import {
   createCreditOrder,
@@ -196,4 +197,85 @@ it('[AC-B2-04zzc#2] 不接触发端口时 R5 照常入账并发布 order.credite
   expect(s.triggerCalls).toStrictEqual([]);
   expect(s.log).not.toContain('port:invite');
   expect(s.log).toContain('publish:order.credited');
+});
+
+// D10-810 (money r1 S1): the order fact layer app.module puts under growth's trigger, its daily
+// expiry (late trigger) and its payout scan: a CREDITED order's base_fen is its booked base.
+type OrderFacts = Parameters<typeof bookedBaseOrderFacts>[0];
+type OrderFact = NonNullable<Awaited<ReturnType<OrderFacts['read']>>>;
+
+function orderFact(orderId: string, rebateStatus: string, baseFen: bigint | null): OrderFact {
+  return {
+    app_id: APP,
+    order_id: orderId,
+    user_id: 'invitee',
+    buy_type: 'self',
+    base_fen: baseFen,
+    pay_amount_fen: 4990n,
+    attr_at: ATTR_AT,
+    credited_at: rebateStatus === 'CREDITED' ? ATTR_AT : null,
+    rebate_status: rebateStatus,
+    refunded_quantity: 0,
+    refunded_quantity_at_credit: 0,
+    rights_pending: false,
+    has_rights: false,
+  };
+}
+
+function factsOver(rows: readonly OrderFact[], booked: Record<string, bigint | null>) {
+  const asked: { appId: string; orderIds: readonly string[] }[] = [];
+  const readBooked: BookedBaseReader = (_trx, appId, orderIds) => {
+    asked.push({ appId, orderIds });
+    return Promise.resolve(
+      new Map(orderIds.filter((id) => id in booked).map((id) => [id, booked[id] ?? null])),
+    );
+  };
+  const inner: OrderFacts = {
+    read: (_trx, input) =>
+      Promise.resolve(rows.find((row) => row.order_id === input.order_id) ?? null),
+    listSelfOrdersInWindow: () => Promise.resolve(rows),
+  };
+  return { facts: bookedBaseOrderFacts(inner, readBooked), asked };
+}
+
+const TRX = {} as Transaction<DB>;
+const WINDOW = { app_id: APP, user_id: 'invitee', from: ATTR_AT, to: ATTR_AT };
+
+it('[AC-B2-04zzc#u1] 过期扫描读期内自购单：CREDITED 单的 base_fen 换成入账基数（预估 320、入账 0 → 0），未入账单保持预估、不查入账基数', async () => {
+  const { facts, asked } = factsOver(
+    [orderFact('credited', 'CREDITED', 320n), orderFact('waiting', 'WAITING', 320n)],
+    { credited: 0n },
+  );
+  const list = await facts.listSelfOrdersInWindow(TRX, WINDOW);
+  expect(list.map((row) => [row.order_id, row.base_fen])).toStrictEqual([
+    ['credited', 0n],
+    ['waiting', 320n],
+  ]);
+  expect(asked).toStrictEqual([{ appId: APP, orderIds: ['credited'] }]);
+});
+
+it('[AC-B2-04zzc#u2] 对照：CREDITED 单入账 1000、预估 0 → base_fen 取 1000（迟到触发仍按入账基数成立）', async () => {
+  const { facts } = factsOver([orderFact('credited', 'CREDITED', 0n)], { credited: 1000n });
+  const list = await facts.listSelfOrdersInWindow(TRX, WINDOW);
+  expect(list.map((row) => row.base_fen)).toStrictEqual([1000n]);
+  expect(await facts.read(TRX, { app_id: APP, order_id: 'credited' })).toMatchObject({
+    base_fen: 1000n,
+  });
+});
+
+it('[AC-B2-04zzc#u3] CREDITED 单查不到入账基数（或为 null）→ base_fen 为 null，不当作 B > 0；单不存在 → null；没有 CREDITED 单 → 不查入账基数', async () => {
+  const { facts, asked } = factsOver(
+    [orderFact('unbooked', 'CREDITED', 320n), orderFact('nulled', 'CREDITED', 320n)],
+    { nulled: null },
+  );
+  const list = await facts.listSelfOrdersInWindow(TRX, WINDOW);
+  expect(list.map((row) => row.base_fen)).toStrictEqual([null, null]);
+  expect(await facts.read(TRX, { app_id: APP, order_id: 'missing' })).toBeNull();
+  expect(asked).toStrictEqual([{ appId: APP, orderIds: ['unbooked', 'nulled'] }]);
+
+  const waiting = factsOver([orderFact('waiting', 'WAITING', 320n)], {});
+  expect(await waiting.facts.read(TRX, { app_id: APP, order_id: 'waiting' })).toMatchObject({
+    base_fen: 320n,
+  });
+  expect(waiting.asked).toStrictEqual([]);
 });

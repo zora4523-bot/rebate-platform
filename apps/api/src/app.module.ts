@@ -1590,7 +1590,8 @@ function inviteRewardWorkerModule(): DynamicModule {
           }
           const reads = growthReadPorts(clock, crypto, events);
           const base = { db, clock, logger, config: transactionConfig(clock) };
-          const orders = createInviteRewardOrderFacts();
+          // D10-810: the expiry's late trigger judges「B > 0」on the booked base, as R5's trigger.
+          const orders = bookedBaseOrderFacts(createInviteRewardOrderFacts());
           const payout = createInviteRewardPayout({
             ...base,
             orders,
@@ -3840,44 +3841,75 @@ function settlementWorkerModule(): DynamicModule {
     }),
     // B2-04zzc (D10-805 ②): R5 hands each credited order to growth's invite reward trigger on the
     // credit's transaction (savepoint inside, failures logged and swallowed).
-    inviteRewardTrigger: ({ db, clock, logger }) => {
-      const facts = createInviteRewardOrderFacts();
-      const config = transactionConfig(clock);
-      return {
-        onCredited: (trx, input) =>
-          createInviteRewardTrigger({
-            db,
-            clock,
-            logger,
-            config,
-            orders: bookedBaseOrderFacts(facts, input),
-          }).onCredited(trx, { app_id: input.app_id, order_id: input.order_id }),
-      };
-    },
+    inviteRewardTrigger: ({ db, clock, logger }) =>
+      createInviteRewardTrigger({
+        db,
+        clock,
+        logger,
+        config: transactionConfig(clock),
+        orders: bookedBaseOrderFacts(createInviteRewardOrderFacts()),
+      }),
   });
 }
 
+type InviteRewardOrderFacts = ReturnType<typeof createInviteRewardOrderFacts>;
+type InviteRewardOrderFact = NonNullable<Awaited<ReturnType<InviteRewardOrderFacts['read']>>>;
+/** The booked base of each listed order of one app (orders.booked_base_fen; absent when unknown). */
+export type BookedBaseReader = (
+  trx: Transaction<Database>,
+  appId: string,
+  orderIds: readonly string[],
+) => Promise<ReadonlyMap<string, bigint | null>>;
+
+const readBookedBaseFen: BookedBaseReader = async (trx, appId, orderIds) => {
+  const rows = await trx
+    .withSchema('app')
+    .selectFrom('orders')
+    .select(['order_id', 'booked_base_fen'])
+    .where('app_id', '=', appId)
+    .where('order_id', 'in', [...orderIds])
+    .execute();
+  return new Map(rows.map((row) => [row.order_id, row.booked_base_fen]));
+};
+
 /**
- * D10-810: the B of BR-INV-24 ②'s「B > 0」is the booked base the credit just wrote, not the
- * estimated orders.base_fen orders' fact port reads; the credited order's fact carries it.
+ * D10-810: the B of BR-INV-24 ②'s「B > 0」is the booked base R5 wrote, not the estimated
+ * orders.base_fen orders' fact port reads. One layer for every invite reward path that can trigger
+ * (R5's trigger on the credit's transaction, after the credit wrote it; the daily expiry's late
+ * trigger; the payout scan): a CREDITED order's fact carries orders.booked_base_fen as base_fen,
+ * read on the caller's transaction (null when none was booked, so it never counts as B > 0); an
+ * order not yet credited keeps its fact as orders reads it.
  */
-function bookedBaseOrderFacts(
-  facts: ReturnType<typeof createInviteRewardOrderFacts>,
-  credited: {
-    readonly app_id: string;
-    readonly order_id: string;
-    readonly booked_base_fen: bigint;
-  },
-): ReturnType<typeof createInviteRewardOrderFacts> {
+export function bookedBaseOrderFacts(
+  facts: InviteRewardOrderFacts,
+  readBooked: BookedBaseReader = readBookedBaseFen,
+): InviteRewardOrderFacts {
+  async function overlay(
+    trx: Transaction<Database>,
+    list: readonly InviteRewardOrderFact[],
+  ): Promise<InviteRewardOrderFact[]> {
+    const credited = new Map<string, string[]>();
+    for (const fact of list) {
+      if (fact.rebate_status !== 'CREDITED') continue;
+      const ids = credited.get(fact.app_id) ?? [];
+      ids.push(fact.order_id);
+      credited.set(fact.app_id, ids);
+    }
+    const booked = new Map<string, ReadonlyMap<string, bigint | null>>();
+    for (const [appId, ids] of credited) booked.set(appId, await readBooked(trx, appId, ids));
+    return list.map((fact) =>
+      fact.rebate_status === 'CREDITED'
+        ? { ...fact, base_fen: booked.get(fact.app_id)?.get(fact.order_id) ?? null }
+        : fact,
+    );
+  }
   return {
     async read(trx, input) {
       const fact = await facts.read(trx, input);
-      if (fact === null || fact.app_id !== credited.app_id || fact.order_id !== credited.order_id) {
-        return fact;
-      }
-      return { ...fact, base_fen: credited.booked_base_fen };
+      return fact === null ? null : ((await overlay(trx, [fact]))[0] ?? null);
     },
-    listSelfOrdersInWindow: (trx, input) => facts.listSelfOrdersInWindow(trx, input),
+    listSelfOrdersInWindow: async (trx, input) =>
+      overlay(trx, await facts.listSelfOrdersInWindow(trx, input)),
   };
 }
 
