@@ -139,6 +139,14 @@ export function responseErrorCode(response: UnionTransportResponse): string | nu
 /** B1-04zzc: error_code of a row whose body rewrite (request.archiveBody) failed. */
 export const ARCHIVE_BODY_FAILED = 'archive_body_rewrite_failed';
 
+/**
+ * B1-04zzu: error_code of a row whose body rewrite could not tell which rows to keep because the
+ * lookup it needs failed (e.g. the 淘宝 refund archive's own-order query threw). Unlike
+ * ARCHIVE_BODY_FAILED the row stores the body as received, not an empty one; the call's result is
+ * unchanged and the log carries no part of the body.
+ */
+export type ArchiveBodyLookupFailed = 'archive_body_lookup_failed';
+
 type Outcome =
   | { readonly ok: true; readonly response: UnionTransportResponse }
   | { readonly ok: false; readonly error: unknown };

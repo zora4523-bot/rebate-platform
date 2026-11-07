@@ -15,6 +15,8 @@
 // - rights_status（B1-04zza，D10-645 ②）：refund_status 4 / 11 → PROCESSING；2 / 12 / 13 → SUCCEEDED；
 //   3 → FAILED；14 / 15 → CLOSED_NO_CHARGE；缺失或别的码 → null（不当成功）。
 // - 维权记录没有推广位字段：union 侧不过滤，原样返回；是否凑狸订单由 orders / funds 按已入库订单匹配。
+// - B1-04zzu（D10-796 ② 甲）：注入 TaobaoOwnOrderReader 时，维权请求的归档只存 tb_trade_id 读不出、或是凑狸
+//   已入库淘宝订单的行（别家维权原文不入库）；listRefunds 返回的条目、nextCursor、告警都不变。
 // TODO(规划/11 §4.5): 明细字段按文档写（录制窗口内 0 条），待大淘客维权录制复核 — blocked on 大淘客录制
 import type {
   RefundQueryOpt,
@@ -51,6 +53,41 @@ export type TaobaoRefundWarningEvent =
 export interface TaobaoRefundWarning {
   readonly event: TaobaoRefundWarningEvent;
   readonly field?: string;
+}
+
+/**
+ * B1-04zzu (D10-796 ② 甲): which of `orderNos` (the readable tb_trade_id of one refund page,
+ * deduplicated) are 凑狸's stored taobao orders of `appId` (app.orders, platform taobao, sub or
+ * parent order number compared verbatim); the answer holds only members of `orderNos`. Read only
+ * (no lock, no write). UnionModule assembles it from orders' reader (union never imports orders).
+ * When it rejects, the refund archive stores the body as received with error_code
+ * `archive_body_lookup_failed` (archive.ts ArchiveBodyLookupFailed) and listRefunds is unchanged.
+ */
+export type TaobaoOwnOrderReader = (
+  appId: string,
+  orderNos: readonly string[],
+) => Promise<ReadonlySet<string>>;
+
+/**
+ * B1-04zzu: the readable tb_trade_id of the rows of a refund body's data.result (a non-blank string
+ * as is, a JSON integer as its decimal text), deduplicated in page order. A row whose tb_trade_id
+ * is missing or invalid, or that is not an object, gives none; so does a body that is not JSON or
+ * whose result is not an array.
+ */
+export function taobaoRefundTradeIds(body: string): readonly string[] {
+  void body;
+  throw new Error('NotImplemented: taobaoRefundTradeIds');
+}
+
+/**
+ * B1-04zzu: the refund body to archive: data.result without the rows whose tb_trade_id is readable
+ * and not in `own`; rows whose tb_trade_id cannot be read stay; every other member and every JSON
+ * number literal is kept as received. Nothing to drop (or result not an array): the body as received.
+ */
+export function taobaoRefundArchiveBody(body: string, own: ReadonlySet<string>): string {
+  void body;
+  void own;
+  throw new Error('NotImplemented: taobaoRefundArchiveBody');
 }
 
 export const TAOBAO_REFUND_PATH = '/api/tb-service/get-order-refund';

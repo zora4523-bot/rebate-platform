@@ -168,6 +168,7 @@ import {
   taobaoRefundParameters,
   TAOBAO_REFUND_PATH,
   TAOBAO_REFUND_VERSION,
+  type TaobaoOwnOrderReader,
   type TaobaoRefundWarning,
 } from './refunds.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
@@ -200,7 +201,11 @@ export type {
   TaobaoOrderWarning,
   TaobaoOrderWarningEvent,
 } from './orders.ts';
-export type { TaobaoRefundWarning, TaobaoRefundWarningEvent } from './refunds.ts';
+export type {
+  TaobaoOwnOrderReader,
+  TaobaoRefundWarning,
+  TaobaoRefundWarningEvent,
+} from './refunds.ts';
 export type { TaobaoPunishWarning, TaobaoPunishWarningEvent } from './punishments.ts';
 
 /** Application-level key pair; fetched once per request, never stored on the adapter. */
@@ -272,6 +277,13 @@ export interface TaobaoAdapterOptions {
   readonly orderWarn?: (event: TaobaoOrderWarning) => void;
   /** B1-04z: refund mapping warnings (see TaobaoRefundWarning in refunds.ts). */
   readonly refundWarn?: (event: TaobaoRefundWarning) => void;
+  /**
+   * B1-04zzu (D10-796 ② 甲): 凑狸's stored taobao orders among a refund page's tb_trade_id, asked
+   * with ctx.appId. With it the refund archive keeps only the rows of those orders and the rows
+   * whose tb_trade_id cannot be read (see refunds.ts); listRefunds' items, nextCursor and warnings
+   * do not change. Without it the refund archive is the body as received (B1-04zzc #11).
+   */
+  readonly ownOrders?: TaobaoOwnOrderReader;
   /** B1-04z: punishment mapping and slot-filter warnings (see punishments.ts). */
   readonly punishWarn?: (event: TaobaoPunishWarning) => void;
 }
