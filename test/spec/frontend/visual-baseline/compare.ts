@@ -42,21 +42,14 @@ export const MUTATION_CSS =
 /** Where the baseline lives in the repository, for messages. */
 export const BASELINE_REPO_DIR = 'test/spec/frontend/visual-baseline/__baselines__/';
 
-/**
- * A module URL of the Vite server as a path for commands.readFile / writeFile (they resolve it
- * against the project root): files inside the root are served as /<path from root>, files
- * outside it as /@fs/<absolute path>.
- */
-function serverPath(url: URL): string {
-  const path = decodeURIComponent(url.pathname);
-  return path.startsWith('/@fs/') ? path.slice('/@fs'.length) : path.replace(/^\/+/, '');
-}
-
-const HERE = new URL('.', import.meta.url);
-/** __baselines__/ next to this file. */
-export const BASELINE_DIR = serverPath(new URL('__baselines__/', HERE));
-/** test/.tmp/visual-baseline/ (git-ignored; uploaded by CI). */
-export const REPORT_DIR = serverPath(new URL('../../../.tmp/visual-baseline/', HERE));
+// commands.readFile / writeFile resolve a relative path against the Vitest project root, which
+// for vitest.browser.config.ts is test/ (`test:browser` runs from there). The paths are fixed
+// constants relative to that root: import.meta.url of this module in the browser is a Vite
+// server URL and does not reliably point at this directory.
+/** test/spec/frontend/visual-baseline/__baselines__/, relative to the project root test/. */
+export const BASELINE_DIR = 'spec/frontend/visual-baseline/__baselines__/';
+/** test/.tmp/visual-baseline/ (git-ignored; uploaded by CI), relative to the project root test/. */
+export const REPORT_DIR = '.tmp/visual-baseline/';
 
 /**
  * page: the regular comparison; mutation-reference: the unmutated screenshot of the mutation
@@ -382,12 +375,28 @@ export async function compareCaptures(
   return comparePixels(crop(actualPixels, region), crop(referencePixels, region));
 }
 
-/** The baseline (PNG, base64), or null when it is not in the repository. */
+/**
+ * Whether a command error says the file does not exist. The error crosses the browser RPC, so it
+ * may arrive as a plain object and lose its code; the Node message starts with
+ * "ENOENT: no such file or directory".
+ */
+function isMissingFile(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  if ('code' in error && error.code === 'ENOENT') return true;
+  if (!('message' in error) || typeof error.message !== 'string') return false;
+  return /\bENOENT\b/.test(error.message);
+}
+
+/**
+ * The baseline (PNG, base64), or null when the file is not in the repository. Any other error
+ * (path outside the allowed directories, permissions and the like) is thrown as it is.
+ */
 export async function readBaseline(target: VisualPage, theme: Theme): Promise<string | null> {
   try {
     return await commands.readFile(`${BASELINE_DIR}${baselineFile(target, theme)}`, 'base64');
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissingFile(error)) return null;
+    throw error;
   }
 }
 
