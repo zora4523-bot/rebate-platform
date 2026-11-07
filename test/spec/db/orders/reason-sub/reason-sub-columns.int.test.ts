@@ -8,6 +8,8 @@
 //   (orders.reason_sub itself gets no CHECK in this task).
 // Grants: couli_app updates the new columns, couli_readonly only reads them.
 // Real PostgreSQL as the business roles; own database per file. Top-level it() only (规划/11 §4.3).
+import { readFileSync, readdirSync } from 'node:fs';
+
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
@@ -257,20 +259,44 @@ it('[AC-B1-09u#11] rows stored before the migration read reason_sub_manual = fal
       defaultExpr: 'false',
       hasMissing: true,
     });
-    // The missing value itself must be false: a column first added with DEFAULT true and then
-    // switched to DEFAULT false keeps true as the missing value, marking every earlier row manual.
-    const missing = await sql<{ missing: string | null }>`
-      SELECT a.attmissingval::text AS missing
-      FROM pg_attribute a
-      WHERE a.attrelid = to_regclass(${`app.${table}`}) AND a.attname = 'reason_sub_manual'
-        AND a.attnum > 0 AND NOT a.attisdropped
-    `.execute(app);
-    expect(missing.rows, `${table}.reason_sub_manual attmissingval`).toEqual([{ missing: '{f}' }]);
   }
   // The migration adds no missing value to the nullable reason_sub columns (they read NULL).
   for (const table of ['rights_imports', 'order_rights']) {
     expect((await attribute(app, table, 'reason_sub'))?.hasMissing, table).toBe(false);
   }
+
+  // The missing value itself (pg_attribute.attmissingval) is not readable by the business roles,
+  // so it is pinned through the migration source: reason_sub_manual is added with DEFAULT false
+  // directly, never first with DEFAULT true and then switched, and earlier rows are not updated.
+  const directory = new URL('../../../../../db/migrations/', import.meta.url);
+  const files = readdirSync(directory).filter(
+    (file) => /^\d{4}_/.test(file) && file.endsWith('.sql') && file.includes('reason-sub'),
+  );
+  expect(files, 'exactly one reason-sub migration').toHaveLength(1);
+  const source = readFileSync(new URL(files[0]!, directory), 'utf8');
+  const sqlOnly = source.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, '').replace(/'(?:''|[^'])*'/g, "''");
+  const statements = sqlOnly
+    .split(';')
+    .map((statement) => statement.trim().replace(/\s+/g, ' '))
+    .filter((statement) => statement !== '');
+  const addFalse =
+    /\bADD COLUMN (?:IF NOT EXISTS )?reason_sub_manual bool(?:ean)? (?:NOT NULL DEFAULT false|DEFAULT false NOT NULL)(?= ?(?:,|$))/i;
+  for (const table of ['order_rights', 'orders']) {
+    const alters = statements.filter((statement) =>
+      new RegExp(`^ALTER TABLE (?:IF EXISTS )?(?:ONLY )?app\\.${table}\\b`, 'i').test(statement),
+    );
+    expect(
+      alters.some((statement) => addFalse.test(statement)),
+      `${files[0]}: ALTER TABLE app.${table} ADD COLUMN reason_sub_manual boolean NOT NULL DEFAULT false`,
+    ).toBe(true);
+  }
+  expect(sqlOnly, `${files[0]}: no ALTER COLUMN`).not.toMatch(/\bALTER\s+COLUMN\b/i);
+  expect(sqlOnly, `${files[0]}: no SET DEFAULT`).not.toMatch(/\bSET\s+DEFAULT\b/i);
+  expect(sqlOnly, `${files[0]}: no DROP`).not.toMatch(/\bDROP\b/i);
+  // rights_imports is granted UPDATE per column, so a column-level GRANT UPDATE (reason_sub) is
+  // the one permitted use of the word; no other statement may update (backfill) rows.
+  const writes = statements.filter((statement) => !/^(?:GRANT|REVOKE)\b/i.test(statement));
+  expect(writes.join(';\n'), `${files[0]}: no UPDATE`).not.toMatch(/\bUPDATE\b/i);
 });
 
 it('[AC-B1-09u#12] an order inserted without reason_sub_manual reads false; true is stored; NULL is rejected', async () => {
