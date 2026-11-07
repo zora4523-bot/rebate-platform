@@ -14,7 +14,7 @@
 // the planner. Integration tests pass the database in: this file never imports @couli/db/testing.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
-import type { CompiledQuery, Kysely } from 'kysely';
+import type { Kysely } from 'kysely';
 import { expect, vi } from 'vitest';
 import { MemoryImportStore } from '../../../../apps/api/src/modules/platform/import-store/index.ts';
 import type { JobHandler, ReceivedJob } from '../../../../apps/api/src/modules/platform/index.ts';
@@ -392,7 +392,9 @@ export interface VersionWrite {
 }
 
 /** Every statement that writes commission_version on app.orders, with its SET and WHERE parts. */
-export function versionWrites(queries: readonly CompiledQuery[]): VersionWrite[] {
+export function versionWrites(
+  queries: readonly { readonly sql: string; readonly parameters: readonly unknown[] }[],
+): VersionWrite[] {
   const writes: VersionWrite[] = [];
   for (const query of queries) {
     if (!/^update\s+(?:"app"\.)?"orders"/i.test(query.sql)) continue;
