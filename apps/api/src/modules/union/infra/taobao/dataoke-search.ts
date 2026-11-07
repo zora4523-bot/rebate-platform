@@ -29,7 +29,11 @@
 //   （非空白字符串），否则 dtitle；主图 / 多图经 normalizeItemImages（main_image_url = mainPic，
 //   image_urls = smallImages 有效项）；quoted_at = 收到搜索响应（不是换算响应）时的注入 Clock。
 //   一级类目字段不填。不映射不外露：estimateAmount、couponLink、itemLink、大淘客 id、goodsSign、
-//   sellerId、goodsId。
+//   goodsId。
+//   店铺标识（B1-04zzs，S-17 S17-u1，D10-806 ①；dataokeShopRefField）：shop_ref 只取同一行的 sellerId——
+//   正整数十进制字符串（/^[1-9][0-9]*$/，与 domain shopRefField 同口径）原样，或安全正整数 number 的
+//   十进制文本；缺失、空串、0、负数、小数、科学计数、前导零、带空白、其他类型 → 不带 shop_ref，不跳行、
+//   不告警。sellerId 不出现在 shop_ref 以外的任何字段、告警或请求里。
 //   价格（BR-PRICE-01，D10-515 / D10-525；券前价口径按编排 D10-530）：price_fen = actualPrice +
 //   couponPrice，coupon_fen = couponPrice（无券为 0），final_price_fen = actualPrice（即 price_fen −
 //   coupon_fen）；originalPrice 只存不进三价（它缺失 / 非法、或与 actualPrice + couponPrice 不一致，
@@ -406,6 +410,16 @@ export function createTaobaoItemIdCache(clock: Clock): TaobaoItemIdCache {
       }
     },
   };
+}
+
+/**
+ * B1-04zzs (S-17 S17-u1, D10-806 ①): the shop_ref of one search row from its own `sellerId` (see
+ * the header ⑤): a positive decimal string as given, or a safe positive integer as its decimal
+ * text → `{ shop_ref }`; anything else → `{}` (the key stays absent; the row is still returned).
+ */
+export function dataokeShopRefField(sellerId: unknown): { readonly shop_ref?: string } {
+  void sellerId;
+  throw new Error('NotImplemented: dataokeShopRefField');
 }
 
 /** Fen of an amount (BR-PRICE-01, D10-525); absent or invalid → undefined. */
