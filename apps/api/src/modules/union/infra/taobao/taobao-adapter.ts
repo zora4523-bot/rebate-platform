@@ -42,6 +42,9 @@
 // refunds.ts，不过滤推广位；没有 orderSource → adapter_unimplemented），listPunishments 经 orderSource
 // GET get-foul-order-list（见 punishments.ts，只留 orderSlots 的推广位；缺一即 adapter_unimplemented）。
 // 两者都是每次调用取一个上游页（per_request，经 ctx.gateUpstream），归档 kind = order。
+// B1-04zzt（S-17 S17-u2，D10-806）：有 orderSource 时声明 shopConvertSources = ['dataoke']，convertShop 经它
+// GET /api/dels/shop/convert（v1.0.0，见 shop-convert.ts），归档 kind = convert；没有 → 不声明，
+// convertShop 为 adapter_unimplemented（不取凭据、不发请求）。
 import { systemScheduler, type Clock, type Scheduler } from '../../../platform/index.ts';
 import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
@@ -135,6 +138,12 @@ import {
   mapPrivilegeLink,
   privilegeLinkParameters,
 } from './privilege-link.ts';
+import {
+  DATAOKE_SHOP_CONVERT_PATH,
+  DATAOKE_SHOP_CONVERT_VERSION,
+  mapShopConvert,
+  shopConvertParameters,
+} from './shop-convert.ts';
 import {
   mapTaobaoSlotOrder,
   nextTaobaoOrderCursor,
@@ -321,6 +330,9 @@ function archiveOf(ctx: CallCtx, kind: 'query' | 'convert' | 'order'): ArchiveCo
   return { appId: ctx.appId, kind };
 }
 
+/** B1-04zzt: the shop convert source of an adapter with the 大淘客 client. */
+const SHOP_CONVERT_SOURCES: ShopConvertSources = Object.freeze(['dataoke'] as const);
+
 function unimplemented(name: string): UnionError {
   return new UnionError('adapter_unimplemented', `taobao ${name}: not implemented`, 'taobao');
 }
@@ -406,6 +418,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     this.#warn = options.warn;
     this.#priceSettings = options.priceSettings;
     this.#orderSource = options.orderSource;
+    // B1-04zzt：只有注入了大淘客客户端才声明（不发请求）；没有时属性缺省。
+    if (options.orderSource !== undefined) this.shopConvertSources = SHOP_CONVERT_SOURCES;
     // 只有明确的 'dataoke' 打开大淘客转链；缺省与其他值一律是 baichuan（行为不变）。
     this.#convertSource = options.convertSource === 'dataoke' ? 'dataoke' : 'baichuan';
     // 只有明确的 'dataoke' / 'official_first' 用大淘客搜索；缺省与其他值一律是 official（行为不变）。
@@ -910,10 +924,15 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     identity: UnionIdentity,
     ctx: CallCtx,
   ): Promise<ShopConvertResult> {
-    void req;
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: convertShop');
+    const source = this.#orderSource;
+    if (source === undefined) throw unimplemented('convertShop');
+    const parameters = shopConvertParameters(req, identity);
+    const exchange = await source.exchange('GET', DATAOKE_SHOP_CONVERT_PATH, parameters, {
+      version: DATAOKE_SHOP_CONVERT_VERSION,
+      archive: archiveOf(ctx, 'convert'),
+      ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+    });
+    return mapShopConvert(exchange);
   }
 
   /**
