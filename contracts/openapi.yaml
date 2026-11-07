@@ -35772,6 +35772,17 @@ components:
           anyOf:
             - $ref: '#/components/schemas/OrderReasonCode'
             - type: 'null'
+        reason_sub:
+          description: |
+            orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
+            when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
+            OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
+            null or absent shows the parent title only. Read-only: written by the server (automatic
+            mapping or a manual change in the admin). Optional: added to an existing /v1 shape
+            (contracts/README rule 8).
+          anyOf:
+            - $ref: '#/components/schemas/OrderReasonSub'
+            - type: 'null'
         est_rebate_fen:
           $ref: '#/components/schemas/NullableFen'
         paid_at:
@@ -36111,6 +36122,17 @@ components:
         reason:
           anyOf:
             - $ref: '#/components/schemas/OrderReasonCode'
+            - type: 'null'
+        reason_sub:
+          description: |
+            orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
+            when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
+            OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
+            null or absent shows the parent title only. Read-only: written by the server (automatic
+            mapping or a manual change in the admin). Optional: added to an existing /v1 shape
+            (contracts/README rule 8).
+          anyOf:
+            - $ref: '#/components/schemas/OrderReasonSub'
             - type: 'null'
         est_rebate_fen:
           $ref: '#/components/schemas/NullableFen'

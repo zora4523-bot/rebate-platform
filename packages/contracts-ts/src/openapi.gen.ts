@@ -11575,6 +11575,15 @@ export interface components {
             masked_order_no?: string;
             display_status: components["schemas"]["OrderDisplayStatus"];
             reason: components["schemas"]["OrderReasonCode"] | null;
+            /**
+             * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
+             *     when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
+             *     OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
+             *     null or absent shows the parent title only. Read-only: written by the server (automatic
+             *     mapping or a manual change in the admin). Optional: added to an existing /v1 shape
+             *     (contracts/README rule 8).
+             */
+            reason_sub?: components["schemas"]["OrderReasonSub"] | null;
             est_rebate_fen: components["schemas"]["NullableFen"];
             /**
              * Format: date-time
@@ -11700,6 +11709,15 @@ export interface components {
             masked_order_no?: string;
             display_status: components["schemas"]["OrderDisplayStatus"];
             reason: components["schemas"]["OrderReasonCode"] | null;
+            /**
+             * @description orders.reason_sub (enum order_reason_sub; 08 BR-TEXT-05 子原因, D10-850): may be set only
+             *     when reason is PUNISH, REFUND or RIGHTS (each value belongs to that parent reason, see
+             *     OrderReasonSub). The App shows 「{order_reason.<reason>.title}：{order_reason_sub.<value>.desc}」;
+             *     null or absent shows the parent title only. Read-only: written by the server (automatic
+             *     mapping or a manual change in the admin). Optional: added to an existing /v1 shape
+             *     (contracts/README rule 8).
+             */
+            reason_sub?: components["schemas"]["OrderReasonSub"] | null;
             est_rebate_fen: components["schemas"]["NullableFen"];
             /**
              * Format: date-time
