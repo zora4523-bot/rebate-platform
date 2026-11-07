@@ -1,0 +1,37 @@
+{
+  "task": "CT-24zx",
+  "spec_ref": "b79958df5e5555f5efe34af75a5e5d29ec35f8e5",
+  "spec_commit": "9260b9609762514b614fc45cc7de15f2170e984e",
+  "red_tests": [],
+  "risk_note": "RV1 (contracts + generated types only): the user-side OrderDetail (getOrder) and OrderSummary (listOrders) gain an optional nullable reason_sub (OrderReasonSub from CT-24zw; set only for PUNISH / REFUND / RIGHTS); descriptions follow 08 BR-TEXT-05 — with a sub-reason the App shows {title}：{sub.desc}, without one the parent reason's title and desc; AdminOrderDetail.reason_sub description aligned. Additive only, not required (endpoints already live). Implementation (read endpoints fill it) is be's D10-850 ②. Contract task, tester none. Codex contract r1 fail (S1 null showed parent title only) → r2 pass. Full verification is the required CI checks (approvals #21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "Codex contract r1 fail (S1: null shows parent title only, BR-TEXT-05 wants title and desc) fixed; r2 pass (couli-runs/CT-24zx/review-codex-r1.json, -r2.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "637de2447302e76821b23600149d84fe39c7058a",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "3b0c338777f0db316744d895ea638ec13483ef9d",
+    "specs": "8c9140c255a3d95f15353edb282a0f1a15027d88"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
