@@ -134,6 +134,14 @@ export interface SearchProductsOptions {
    * record() once (not awaited; a throw is swallowed; the response never changes).
    */
   readonly priceHistory?: PriceSnapshotRecorder;
+  /**
+   * B1-04zzx (FU-CATEGORY-BLOCKLIST step 3, D10-860): the category blocklist of the search tab.
+   * Optional because frozen fixtures hand-write these options; CatalogModule passes its Catalog.
+   * Absent, search behaves exactly as before. Present, the main results and the fallback feed pass
+   * through filterCategories on every request (after the cache), with the
+   * catalog_category_missing / catalog_category_blocked alerts.
+   */
+  readonly categoryFilter?: Pick<Catalog, 'filterCategories'>;
 }
 
 /** BR-PRICE-15: price bounds in fen, both ends inclusive. */
