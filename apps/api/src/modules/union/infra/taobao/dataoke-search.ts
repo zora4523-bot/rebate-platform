@@ -62,7 +62,12 @@ import { addFen, pctStrToBp } from '@couli/money';
 import type { Clock } from '../../../platform/index.ts';
 import { MAX_ITEM_IMAGES, normalizeItemImages, type ItemImages } from '../../domain/item-images.ts';
 import { isPriceAnomaly, type PriceAnomalyReason } from '../../domain/taobao-price.ts';
-import { shopNameField, UnionError, type UnionItemDetail } from '../../domain/types.ts';
+import {
+  shopNameField,
+  shopRefField,
+  UnionError,
+  type UnionItemDetail,
+} from '../../domain/types.ts';
 import type { DataokeParameters } from '../dataoke/dataoke-client.ts';
 import type { TaobaoWarning } from './response.ts';
 
@@ -418,8 +423,11 @@ export function createTaobaoItemIdCache(clock: Clock): TaobaoItemIdCache {
  * text → `{ shop_ref }`; anything else → `{}` (the key stays absent; the row is still returned).
  */
 export function dataokeShopRefField(sellerId: unknown): { readonly shop_ref?: string } {
-  void sellerId;
-  throw new Error('NotImplemented: dataokeShopRefField');
+  if (typeof sellerId === 'string') return shopRefField(sellerId);
+  if (typeof sellerId === 'number' && Number.isSafeInteger(sellerId) && sellerId > 0) {
+    return shopRefField(String(sellerId));
+  }
+  return {};
 }
 
 /** Fen of an amount (BR-PRICE-01, D10-525); absent or invalid → undefined. */
@@ -489,6 +497,8 @@ export function mapDataokeSearchItem(
     title,
     // B1-04zzg：店铺名只取 data.list[].shopName，换算详情的 shop_title 不补。
     ...shopNameField(row.shopName),
+    // B1-04zzs：店铺标识只取同一行的 sellerId（header 店铺标识段）。
+    ...dataokeShopRefField(row.sellerId),
     // 价格异常：三价 0n 占位（不出截断值、不出部分价格），出不出卡由 catalog 决定。
     price_fen: price.status === 'ok' ? price.price : 0n,
     coupon_fen: price.status === 'ok' ? price.coupon : 0n,
