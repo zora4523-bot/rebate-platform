@@ -327,7 +327,7 @@ approvals:
     granted: true
     date: '2026-11-07'
     note: '负责人 2026-11-07 在编排会话回复「批准第 4 次测试」，并对“受益人是未成年时推广份额正差应归平台、没有用例覆盖”一条回复「这个请忽略掉」；先例第 49、50 条。仅授权本任务 test 计数 3→4、spec-test 多一轮；由新鲜独立 Claude 写（approvals #36 / D10-775）。'
-  - id: 53
+  - id: 52
     row: 12
     title: 'Codex 对抗评审的推理档位由 low 改为 medium：codex-run.sh review 模式的 model_reasoning_effort 默认值改 medium（模型仍 gpt-6-astra，impl 模式仍 high）；CODEX_REVIEW_EFFORT 仍保留为开关、只在负责人另有决定时改；取代第 27 条「默认 low」一句，第 27 条其余不变（所有风险级的代码评审只跑 Codex 新只读会话、Codex 写的规则测试仍由 Claude 新子代理过审）'
     granted: true
