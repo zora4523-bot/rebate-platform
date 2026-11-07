@@ -24,7 +24,7 @@
 // app's active rows of app.agent_rule_chunks (agent's own table, createActiveRuleChunksReader over
 // context.db) and agent.rag.min_score through the same content reader (code default 0.2 when unset
 // or invalid, tools/rules), behind agent.tools.search_rules.enabled.
-import { bridge } from '@couli/contracts-ts';
+import { bridge, display_status as displayStatusEnum } from '@couli/contracts-ts';
 import type { ContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
 import type { AgentRunTexts } from '../../orchestrator/index.ts';
@@ -57,16 +57,75 @@ export function agentStreamPortsToken(): symbol {
 const PAGE_GUIDE_ROUTES = 'agent.page_guide.routes';
 
 /**
- * B3-08m · BR-AI-07 判定 3: the T5 summaries the core may write that contracts/texts.default.json
- * does not carry yet, with the default sentence 08 gives for an unconfigured summary
- * (「某码 summary 未配置时 … NOT_TRACKED = “未找到这笔订单的返利记录，详情见卡片”」).
+ * B3-08m · BR-AI-07 T5 / BR-TEXT-22: the package defaults of the order summaries the core may write
+ * when contracts/texts.default.json has no such key. 08 (12_TEXT BR-TEXT-22 细则): 「其余
+ * order_status.<display_status>.summary 与全部 order_reason.<CODE>.summary 的包内默认 =
+ * 「{BR-TEXT-02 状态文案或 BR-TEXT-05 标题}，详情见卡片。」」 (BR-AI-07: 并记告警
+ * agent.template_missing). The titles below are BR-TEXT-05's default titles and the status texts
+ * BR-TEXT-02's 映射表, word for word (SPEC_REF).
  */
-const TEMPLATE_FALLBACKS: Readonly<Record<string, string>> = {
-  'order_reason.NOT_TRACKED.summary': '未找到这笔订单的返利记录，详情见卡片',
+const REASON_TITLES: Readonly<Record<string, string>> = {
+  REFUND: '订单已退款或取消',
+  PART_REFUND: '部分退款',
+  RIGHTS: '发起售后维权，返利取消',
+  PUNISH: '订单被联盟判定违规',
+  PRICE_COMPARE: '比价订单',
+  PRICE_PROTECT: '商家价保退差',
+  SETTLE_DIFF: '结算金额调整',
+  NOT_TRACKED: '未找到这笔订单的返利记录',
+  EXPIRED_CLICK: '下单时链接已过期',
+  RELATION_INVALID: '淘宝授权未完成或已失效',
+  OTHER_TLJ: '订单归其他推广者',
+  BLACKLIST: '订单未通过安全校验',
+  PRESALE_UNPAID: '预售尾款未付',
+  COMMISSION_ZERO: '返利已取消',
+  OTHER: '其他原因',
 };
 
+/**
+ * BR-TEXT-02 状态文案 by display_status. CREDITED_PART_CLAWED (「已结算（部分扣回 {z}）」) is left
+ * out: its text carries an amount, which a summary must not (BR-AI-07), so 08 gives no usable
+ * default for it. A display_status outside the contract enum is BR-TEXT-02's 「未知编码」 row.
+ */
+const STATUS_TEXTS: Readonly<Record<string, string>> = {
+  DEPOSIT_PAID: '已付定金',
+  PAID: '已付款，返利待确认',
+  WAITING: '已收货，等待联盟结算',
+  CREDITING: '入账核对中',
+  RIGHTS_PENDING: '售后处理中，入账暂停',
+  REVIEWING: '入账核对中',
+  NO_REBATE: '本单无返利',
+  CREDITED: '已结算',
+  INVALID: '已失效',
+  CLAWED_BACK: '已扣回',
+};
+const UNKNOWN_STATUS_TEXT = '状态更新中';
+const KNOWN_STATUSES: readonly string[] = displayStatusEnum;
+const SUMMARY_SUFFIX = '，详情见卡片。';
+/** The one-order wording of the list summary, for a summary 08 gives no default for. */
+const LIST_SUMMARY = 'order_list.summary';
+
+function own(table: Readonly<Record<string, string>>, key: string): string | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
+ * The package default of an order summary key missing from the contract copy; undefined for any
+ * other key. Never the key itself: a code 08 has no default for (an order_reason without a
+ * BR-TEXT-05 title, e.g. CANCELLED; CREDITED_PART_CLAWED) gets the contract's one-order list
+ * summary (order_list.summary with n = 1), which says only that the details are on the card.
+ */
 function templateFallback(key: string): string | undefined {
-  return Object.hasOwn(TEMPLATE_FALLBACKS, key) ? TEMPLATE_FALLBACKS[key] : undefined;
+  const match = /^(order_reason|order_status)\.([A-Z][A-Z0-9_]*)\.summary$/u.exec(key);
+  if (match === null) return undefined;
+  const [, family, code] = match as unknown as [string, string, string];
+  const head =
+    family === 'order_reason'
+      ? own(REASON_TITLES, code)
+      : (own(STATUS_TEXTS, code) ??
+        (KNOWN_STATUSES.includes(code) ? undefined : UNKNOWN_STATUS_TEXT));
+  if (head !== undefined) return head + SUMMARY_SUFFIX;
+  return agentText(LIST_SUMMARY).replaceAll('{n}', '1');
 }
 
 /**
@@ -87,7 +146,7 @@ export function productionRunTexts(
     } catch {
       const missing = templateFallback(key);
       if (missing !== undefined) {
-        // BR-TEXT (T5 summary 键): an unconfigured summary uses the default sentence, with a warning.
+        // BR-AI-07 / BR-TEXT-22: an unconfigured summary uses the package default, with a warning.
         logger.warn({ key }, 'agent.template_missing');
         return missing;
       }
