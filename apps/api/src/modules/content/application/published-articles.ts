@@ -5,6 +5,16 @@
 // and only when that revision's category is help or rule. SELECT only on app.articles, app-scoped,
 // read fresh on every call (no cache). app.module builds the reader and hands it to agent (D10-386,
 // as B3-08k): the agent never queries app.articles and never passes a database handle to content.
+//
+// B3-08l: createPublishedArticleAppsReader({db, clock}) → PublishedArticleApps, the read-only list of
+// the apps the worker's rule chunk sync visits (app.module puts it next to list behind
+// agentRuleArticlesToken(); the composition root never queries app.articles itself). apps()
+// resolves the distinct app ids that have at least one article whose current revision (the same
+// rule as list: largest version with status exactly published and published_at not later than the
+// Clock) is in category help or rule: exactly the apps for which list(appId) is not empty. Each app
+// id once, ascending by UTF-16 code unit (JavaScript's default sort, not the database collation);
+// SELECT only on app.articles, read fresh on every call (no cache); building
+// the reader sends no query. Rule test: test/spec/agent/rule-search-wiring/published-apps.int.test.ts.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
@@ -28,6 +38,19 @@ export interface PublishedArticle {
 
 export interface PublishedArticlesReader {
   list(appId: string): Promise<readonly PublishedArticle[]>;
+}
+
+/** B3-08l: the apps that have a current published help / rule article. */
+export interface PublishedArticleApps {
+  /** Distinct app ids, ascending. */
+  apps(): Promise<readonly string[]>;
+}
+
+export function createPublishedArticleAppsReader(
+  options: PublishedArticlesReaderOptions,
+): PublishedArticleApps {
+  void options;
+  throw new Error('NotImplemented: createPublishedArticleAppsReader');
 }
 
 export function createPublishedArticlesReader(
