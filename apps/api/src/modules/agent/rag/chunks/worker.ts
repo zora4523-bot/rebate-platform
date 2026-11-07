@@ -47,6 +47,7 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { PublishedArticleApps, PublishedArticlesReader } from '../../../content/index.ts';
 import type { Clock, RootLogger } from '../../../platform/index.ts';
+import { syncRuleChunks } from './sync.ts';
 
 /** content's published help / rule articles, plus the apps that have any (app.module's). */
 export type RuleSyncArticles = PublishedArticlesReader & PublishedArticleApps;
@@ -86,15 +87,109 @@ export interface AgentRuleSyncRuntime {
   start(options?: RuleSyncStartOptions): RuleSyncLoop;
 }
 
+const RULE_ARTICLES = Symbol('AGENT_RULE_ARTICLES');
+const RULE_SYNC = Symbol('AGENT_RULE_SYNC');
+
 export function agentRuleArticlesToken(): symbol {
-  throw new Error('NotImplemented: agentRuleArticlesToken');
+  return RULE_ARTICLES;
 }
 
 export function agentRuleSyncToken(): symbol {
-  throw new Error('NotImplemented: agentRuleSyncToken');
+  return RULE_SYNC;
+}
+
+/** The B3-08i ledger's default period (a code constant, no configuration key). */
+function syncIntervalMs(): number {
+  return 300_000;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
+/** setInterval, unref'd, so the timer alone never keeps the process alive. */
+const intervalSchedule: RuleSyncSchedule = (tick, intervalMs) => {
+  const handle = setInterval(() => {
+    void tick();
+  }, intervalMs);
+  handle.unref();
+  return { stop: () => clearInterval(handle) };
+};
+
+function ascending(appIds: Iterable<string>): string[] {
+  // JavaScript's default order (UTF-16 code units).
+  return [...new Set(appIds)].sort();
 }
 
 export function createAgentRuleSyncRuntime(deps: AgentRuleSyncRuntimeDeps): AgentRuleSyncRuntime {
-  void deps;
-  throw new Error('NotImplemented: createAgentRuleSyncRuntime');
+  const { db, clock, logger, articles } = deps;
+
+  /** articles.apps() with every app that still has an active chunk (agent's own table). */
+  async function appsOfRound(): Promise<string[]> {
+    const listed = await articles.apps();
+    const active = await db
+      .withSchema('app')
+      .selectFrom('agent_rule_chunks')
+      .select('app_id')
+      .distinct()
+      .where('status', '=', 'active')
+      .execute();
+    return ascending([...listed, ...active.map((row) => row.app_id)]);
+  }
+
+  async function syncOnce(): Promise<RuleSyncRound> {
+    let apps: string[];
+    try {
+      apps = await appsOfRound();
+    } catch (error) {
+      logger.warn({ error_name: errorName(error) }, 'agent_rule_sync_failed');
+      return { synced: [], failed: [] };
+    }
+    const synced: string[] = [];
+    const failed: string[] = [];
+    // One app after another: each sync holds its own app's advisory lock (sync.ts).
+    for (const appId of apps) {
+      try {
+        await syncRuleChunks({ db, clock, articles }, appId);
+        synced.push(appId);
+      } catch (error) {
+        logger.warn({ app_id: appId, error_name: errorName(error) }, 'agent_rule_sync_app_failed');
+        failed.push(appId);
+      }
+    }
+    return { synced, failed };
+  }
+
+  function start(options?: RuleSyncStartOptions): RuleSyncLoop {
+    const schedule = options?.schedule ?? intervalSchedule;
+    let stopped = false;
+    let inFlight: Promise<void> | null = null;
+    // A round never overlaps another; after stop no round starts.
+    const round = (): Promise<void> => {
+      if (stopped || inFlight !== null) return Promise.resolve();
+      const current = syncOnce().then(
+        () => undefined,
+        () => undefined,
+      );
+      inFlight = current;
+      void current.then(() => {
+        if (inFlight === current) inFlight = null;
+      });
+      return current;
+    };
+    // 「启动后先跑一轮」: the first round begins now, the timer only repeats it.
+    void round();
+    const timer = schedule(round, syncIntervalMs());
+    return {
+      async stop() {
+        if (!stopped) {
+          stopped = true;
+          timer.stop();
+        }
+        await inFlight;
+      },
+    };
+  }
+
+  return { syncOnce, start };
 }

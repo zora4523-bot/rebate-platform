@@ -49,8 +49,41 @@ export interface PublishedArticleApps {
 export function createPublishedArticleAppsReader(
   options: PublishedArticlesReaderOptions,
 ): PublishedArticleApps {
-  void options;
-  throw new Error('NotImplemented: createPublishedArticleAppsReader');
+  const { db, clock } = options;
+  return {
+    async apps() {
+      const now = clock.now();
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('articles as a')
+        .select('a.app_id')
+        .distinct()
+        .where('a.status', '=', 'published')
+        .where('a.published_at', 'is not', null)
+        .where('a.published_at', '<=', now)
+        // The same current-revision rule as list: the newest published revision of the article
+        // decides, before the category filter.
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('articles as newer')
+                .select('newer.id')
+                .whereRef('newer.app_id', '=', 'a.app_id')
+                .whereRef('newer.id', '=', 'a.id')
+                .whereRef('newer.version', '>', 'a.version')
+                .where('newer.status', '=', 'published')
+                .where('newer.published_at', 'is not', null)
+                .where('newer.published_at', '<=', now),
+            ),
+          ),
+        )
+        .where('a.category', 'in', ['help', 'rule'])
+        .execute();
+      // JavaScript's default order (UTF-16 code units), not the database collation.
+      return [...new Set(rows.map((row) => row.app_id))].sort();
+    },
+  };
 }
 
 export function createPublishedArticlesReader(

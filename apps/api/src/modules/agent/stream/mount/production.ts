@@ -12,18 +12,23 @@
 // (agent/store/results createPgResultSetStore over context.db), shared by every runtime instance.
 // B3-08g (rule tests: test/spec/agent/stream-assembly-orders/**): with the ports' orders,
 // claimEntries and dailyCounter, the registry also holds handoff_to_human, prefill_claim,
-// list_my_orders and explain_order (registered = specs/agent-tools.allowlist exactly; search_rules
-// waits for B3-08e / B3-08i), each behind agent.tools.<name>.enabled through the same content
+// list_my_orders and explain_order, each behind agent.tools.<name>.enabled through the same content
 // reader; card_id references read agent_cards (createOrderCardRefs over context.db) and the
 // by-number budget is createOrderNoQuota over ports.dailyCounter (./orders.ts).
 // B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): "the content configuration
 // reader" above is context.contentReader (app.module's, through the runtime): the search platform
 // switches, the page_guide routes, the tool switches, the review budget and the order budget are
 // read through it; no content reader is built from context.db.
+// B3-08m (rule tests: test/spec/agent/rule-search-wiring/**): search_rules is registered too
+// (registered = specs/agent-tools.allowlist exactly, with the order ports), over the caller's
+// app's active rows of app.agent_rule_chunks (agent's own table, createActiveRuleChunksReader over
+// context.db) and agent.rag.min_score through the same content reader (code default 0.2 when unset
+// or invalid, tools/rules), behind agent.tools.search_rules.enabled.
 import { bridge } from '@couli/contracts-ts';
 import type { ContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
 import type { AgentRunTexts } from '../../orchestrator/index.ts';
+import { createActiveRuleChunksReader } from '../../rag/chunks/index.ts';
 import { createPgResultSetStore } from '../../store/results/index.ts';
 import {
   createKeywordMatcher,
@@ -52,6 +57,19 @@ export function agentStreamPortsToken(): symbol {
 const PAGE_GUIDE_ROUTES = 'agent.page_guide.routes';
 
 /**
+ * B3-08m · BR-AI-07 判定 3: the T5 summaries the core may write that contracts/texts.default.json
+ * does not carry yet, with the default sentence 08 gives for an unconfigured summary
+ * (「某码 summary 未配置时 … NOT_TRACKED = “未找到这笔订单的返利记录，详情见卡片”」).
+ */
+const TEMPLATE_FALLBACKS: Readonly<Record<string, string>> = {
+  'order_reason.NOT_TRACKED.summary': '未找到这笔订单的返利记录，详情见卡片',
+};
+
+function templateFallback(key: string): string | undefined {
+  return Object.hasOwn(TEMPLATE_FALLBACKS, key) ? TEMPLATE_FALLBACKS[key] : undefined;
+}
+
+/**
  * Copy from contracts/texts.default.json. An error key without its own text takes the error
  * message (errorMsg); any other missing key shows the key itself, as the search card's
  * fallback_text does. Tool status texts never show a key (tool-status.ts, D10-151). The local
@@ -67,6 +85,12 @@ export function productionRunTexts(
     try {
       return agentText(key);
     } catch {
+      const missing = templateFallback(key);
+      if (missing !== undefined) {
+        // BR-TEXT (T5 summary 键): an unconfigured summary uses the default sentence, with a warning.
+        logger.warn({ key }, 'agent.template_missing');
+        return missing;
+      }
       const code = /^error\.(\d+)$/u.exec(key);
       return code === null ? key : errors.errorMsg(Number(code[1]));
     }
@@ -180,6 +204,10 @@ export function createProductionStreamAssembly(
       parsing: ports.parsing,
       cards: ports.cards,
       ...(orderTools === undefined ? {} : { orders: orderTools }),
+      rules: {
+        activeChunks: createActiveRuleChunksReader(context.db),
+        config: async (appId, key) => (await config.configValue(appId, key))?.value,
+      },
     },
   });
   return { ...assembly, safety };
