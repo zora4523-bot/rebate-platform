@@ -11,6 +11,33 @@
 // indirect −17, platform +76, self's obligation forfeited (same money as forfeit.int.test.ts #1).
 // Order Y (WAITING): U is the only beneficiary (self 5000); credit B 850 → U 425, platform 575.
 // Serial result: U 85 − 34 + 425 = 476; X UNION_RECEIVABLE 600, Y 1000.
+//
+// Why the opponent is a users-row-first writer (Codex spec-test r2 S1, orchestrator §12):
+// the users row lock already serialises every writer of a user's balance, so for this path the
+// balance row lock is a redundant guard and dropping it is an equivalent mutant; no opponent is
+// made up here.
+// Every ledger.lockBalances call that is followed by a balance write takes the users row first,
+// on the same transaction (users lock → lockBalances, apps/api/src/modules/…):
+//   settlement/clawback/clawback-order.ts:816→822, :1076→1082 (this path);
+//   settlement/credit/credit-order.ts:377→384; settlement/credit/beneficiary/beneficiary-credit.ts
+//   :412→417; settlement/application/admin-recon-restore.ts:319→328;
+//   ledger/application/admin-adjustment.ts:533→535; admin-adjustment-closing.ts:387→389;
+//   bad-debt-writeoff.ts:173→174, :503→504; invite-reward-grant.ts:186, whose only caller
+//   (through apps/api/src/app.module.ts:1587) growth/application/invite-reward.ts locks users
+//   at :824 before grant at :966;
+//   payout/application/withdraw-apply.ts:350→351; withdrawal-commands.ts:198→199;
+//   went-negative.ts:81→82; withdrawal-manual-paid.ts:127→128; withdrawal-proven-success.ts
+//   :270→271; admin-unknown-payouts.ts:516→517; auto-payout.ts:450→451; payout/jobs/review-job.ts
+//   :87→88; payout-landing.ts:149→150 on its own transaction, and on the caller's one
+//   payout/jobs/landing-job.ts:310 locks users before landing.success / fail (:360, :378).
+// The one lockBalances call without a users lock, payout/application/payout-execute.ts:309, writes
+// no balance (its ledger port is getBalances | lockBalances only, :96; header :24-27). The only
+// other balance writer, ledger.reverse
+// (settlement/application/admin-union-receipts.ts:374), reverses a platform-only RECEIPT
+// voucher. Every user entry goes through post, which refuses an account
+// this transaction did not lock (NOT_LOCKED, ledger/application/ledger.ts:438-445), re-locks the
+// held rows NOWAIT (:451) and writes by a version CAS (ledger/infra/store.ts:367-386). So a mutant
+// that drops lockBalances from this path cannot post at all (no account id, or NOT_LOCKED).
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
