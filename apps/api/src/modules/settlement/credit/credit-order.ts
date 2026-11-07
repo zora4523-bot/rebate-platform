@@ -98,7 +98,29 @@ export interface BeneficiaryEventInput {
   readonly reason: CreditForfeitReason | null;
 }
 
+/**
+ * B2-04zzc (编排 D10-805 ②, D10-810; 08 BR-INV-24 ②): growth's InviteRewardTrigger, structurally
+ * (settlement never imports growth). It records the order as the trigger of its owner's invite
+ * reward qualification; it never posts a voucher and never touches a budget (the payout scan does,
+ * after this transaction committed). It catches its own failures under its own savepoint, so a
+ * failing trigger never fails the credit.
+ */
+export interface CreditInviteTrigger {
+  onCredited(
+    trx: Transaction<DB>,
+    input: { readonly app_id: string; readonly order_id: string },
+  ): Promise<void>;
+}
+
 export interface CreditOrderDependencies {
+  /**
+   * B2-04zzc: optional. When given, R5 calls it once per credited order on the credit's own
+   * transaction, after the CAS to CREDITED and the rebate history row and before order.credited is
+   * published, with { app_id, order_id } of the order. A skipped order (any CreditSkipReason) does
+   * not call it, and an order credited with booked_base_fen = 0 never triggers (D10-810: the B > 0
+   * of BR-INV-24 ② is the booked base). Only R5 calls it (R13, the admin restore, does not).
+   */
+  readonly inviteTrigger?: CreditInviteTrigger;
   readonly clock: Clock;
   readonly logger: Pick<RootLogger, 'info' | 'warn' | 'error'>;
   readonly ledger: Pick<Ledger, 'openUserAccount' | 'lockBalances' | 'post'>;
