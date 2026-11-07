@@ -30,6 +30,24 @@ export const RESCAN_QUERY_KIND = 'rescan';
 /** The exclusion table of couli_sync_watermark_lag_seconds (every other query_kind counts). */
 export const NON_SYNC_QUERY_KINDS: readonly NonSyncQueryKind[] = ['rescan', 'rights', 'manual'];
 
+/**
+ * B1-04zzr (D10-798): a rescan stream's query_kind: 'rescan' or one starting with 'rescan_' (the
+ * tiers 'rescan_hour' / 'rescan_week'). Such streams make series of the rescan position gauge.
+ */
+export function isRescanQueryKind(queryKind: string): boolean {
+  void queryKind;
+  throw new Error('NotImplemented: isRescanQueryKind');
+}
+
+/**
+ * B1-04zzr: whether a stream of this query_kind counts in couli_sync_watermark_lag_seconds: every
+ * rescan stream (isRescanQueryKind) and exactly 'rights' / 'manual' are left out.
+ */
+export function countsInWatermarkLag(queryKind: string): boolean {
+  void queryKind;
+  throw new Error('NotImplemented: countsInWatermarkLag');
+}
+
 interface RescanRow {
   app_id: string;
   platform: string;

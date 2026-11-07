@@ -187,3 +187,34 @@ export function rescanIntervalSeconds(days: number, capMs: number): number {
   // never takes longer than a day because of rounding.
   return Math.max(RESCAN_MIN_INTERVAL_SECONDS, Math.floor(capMs / (days * 1000)));
 }
+
+/**
+ * B1-04zzr (D10-798): seconds between rounds of a rescan tier whose round over depthMs should take
+ * periodMs: max(60, floor(period ÷ (depth ÷ cap))) in seconds. With a period of one day it is
+ * rescanIntervalSeconds(days, capMs).
+ */
+export function rescanTierIntervalSeconds(periodMs: number, depthMs: number, capMs: number): number {
+  void periodMs;
+  void depthMs;
+  void capMs;
+  throw new Error('NotImplemented: rescanTierIntervalSeconds');
+}
+
+/**
+ * B1-04zzr: an order_sync.rescan.taobao.window_minutes value: a positive integer number of minutes
+ * (anything else takes the default 180 and warns, as days does).
+ */
+export function isRescanWindowMinutes(value: unknown): value is number {
+  void value;
+  throw new Error('NotImplemented: isRescanWindowMinutes');
+}
+
+/**
+ * B1-04zzr (D10-804): a tiered rescan's window cap in ms from a valid window_minutes; with
+ * order_sync.promo_mode on it is min(window_minutes, 20) minutes. The increment cap is untouched.
+ */
+export function rescanWindowCapMs(windowMinutes: number, promoMode: boolean): number {
+  void windowMinutes;
+  void promoMode;
+  throw new Error('NotImplemented: rescanWindowCapMs');
+}
