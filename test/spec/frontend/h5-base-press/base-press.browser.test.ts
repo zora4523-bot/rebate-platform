@@ -2,7 +2,10 @@
 // DSX-46: every clickable base component looks different while pressed (`:active`), shows the
 // shared focus ring on `:focus-visible`, and never shows the WebView tap highlight. The pseudo
 // states are forced through the Chrome DevTools Protocol (CSS.forcePseudoState) so the check does
-// not depend on pointer timing.
+// not depend on pointer timing. "Looks different" is judged on screenshot pixels inside the
+// component's box (as test/spec/frontend/visual-baseline/compare.ts does), so a style change on
+// something that is not painted (a pseudo element without `content`, a hidden or zero-size child)
+// does not count; PRESS#1 first checks that judgement on hand-made probes.
 import { createElement, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
@@ -115,7 +118,11 @@ function findNode(node: CdpNode, marker: string): number | undefined {
 }
 
 /** Forces CSS pseudo-classes on `element`, reads `read()` with transitions finished, releases. */
-async function whileForced<T>(element: HTMLElement, states: string[], read: () => T): Promise<T> {
+async function whileForced<T>(
+  element: HTMLElement,
+  states: string[],
+  read: () => T | Promise<T>,
+): Promise<T> {
   probeCount += 1;
   const marker = `probe-${probeCount}`;
   element.setAttribute(PROBE_ATTRIBUTE, marker);
@@ -132,31 +139,198 @@ async function whileForced<T>(element: HTMLElement, states: string[], read: () =
     for (const animation of element.getAnimations({ subtree: true })) {
       if (animation.effect?.getTiming().iterations !== Infinity) animation.finish();
     }
-    return read();
+    return await read();
   } finally {
     await session.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
     element.removeAttribute(PROBE_ATTRIBUTE);
   }
 }
 
-/** Background, opacity and scale of the element, its descendants and their ::before / ::after. */
-function look(element: HTMLElement): string {
-  const lines: string[] = [];
-  for (const node of [element, ...element.querySelectorAll('*')]) {
-    for (const pseudo of [null, '::before', '::after']) {
-      const style = getComputedStyle(node, pseudo);
-      lines.push(
-        [
-          style.backgroundColor,
-          style.backgroundImage,
-          style.opacity,
-          style.transform,
-          style.getPropertyValue('scale'),
-        ].join(' | '),
-      );
+// ---------------------------------------------------------------------------------------------
+// Pressed look, judged on screenshot pixels: only what is painted can differ.
+
+/** A pixel counts as different when one RGBA channel differs by more than this (0–255). */
+const PIXEL_TOLERANCE = 8;
+
+/** A box in screenshot pixels (CSS pixels, origin at the top left corner of the screenshot). */
+interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function nextFrames(): Promise<void> {
+  return new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
+
+/** Finite animations and transitions run to their end, endless ones cancelled, two frames. */
+async function settled(): Promise<void> {
+  for (const animation of document.getAnimations()) {
+    try {
+      if (animation.effect?.getComputedTiming().iterations === Infinity) animation.cancel();
+      else animation.finish();
+    } catch {
+      animation.cancel();
     }
   }
-  return lines.join('\n');
+  await nextFrames();
+}
+
+/** Screenshot of the test page (<body>), CSS pixels, animations stopped, caret hidden. */
+async function capture(): Promise<ImageData> {
+  const png = await page.screenshot({
+    save: false,
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css',
+  });
+  const image = new Image();
+  image.src = `data:image/png;base64,${png}`;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  expect(context, 'Chromium has a 2D canvas context').not.toBeNull();
+  context!.drawImage(image, 0, 0);
+  return context!.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+/** The element's box in the pixels of capture() (relative to <body>), rounded outwards. */
+function regionOf(element: Element): Region {
+  const box = element.getBoundingClientRect();
+  const origin = document.body.getBoundingClientRect();
+  const left = Math.floor(box.left - origin.left);
+  const top = Math.floor(box.top - origin.top);
+  const right = Math.ceil(box.right - origin.left);
+  const bottom = Math.ceil(box.bottom - origin.top);
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Differing pixels inside the region; a pixel only one of the images has counts as differing. */
+function changedPixels(actual: ImageData, reference: ImageData, region: Region): number {
+  let changed = 0;
+  for (let y = Math.max(0, region.y); y < region.y + region.height; y += 1) {
+    for (let x = Math.max(0, region.x); x < region.x + region.width; x += 1) {
+      const inActual = x < actual.width && y < actual.height;
+      const inReference = x < reference.width && y < reference.height;
+      if (!inActual && !inReference) continue;
+      if (inActual !== inReference) {
+        changed += 1;
+        continue;
+      }
+      const a = (y * actual.width + x) * 4;
+      const b = (y * reference.width + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        if (Math.abs(actual.data[a + channel]! - reference.data[b + channel]!) > PIXEL_TOLERANCE) {
+          changed += 1;
+          break;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+interface PressedChange {
+  /** Differing pixels between two rest screenshots (must be 0, or the judgement is unreliable). */
+  steady: number;
+  /** Differing pixels between the rest and the pressed (`:active`) screenshot. */
+  pressed: number;
+}
+
+/** Rest vs forced `:active`, compared only inside the element's rest box. */
+async function pressedChange(element: HTMLElement): Promise<PressedChange> {
+  await settled();
+  const region = regionOf(element);
+  expect(region.width * region.height, 'the element has a box with area').toBeGreaterThan(0);
+  const rest = await capture();
+  const again = await capture();
+  const pressed = await whileForced(element, ['active'], async () => {
+    await settled();
+    return capture();
+  });
+  return {
+    steady: changedPixels(again, rest, region),
+    pressed: changedPixels(pressed, rest, region),
+  };
+}
+
+/**
+ * Hand-made probes for the judgement itself: a style change on something that is not painted
+ * must not count, a painted one must. Colours are literal on purpose (test-only elements).
+ */
+const PROBE_STYLE_ID = 'dsx46-press-probes';
+const PROBE_CSS = `
+.dsx46-probe { position: relative; display: block; box-sizing: border-box; width: 160px;
+  height: 48px; padding: 12px; background-color: rgb(255, 255, 255); color: rgb(0, 0, 0); }
+.dsx46-probe .layer { position: absolute; inset: 0; }
+.dsx46-no-content:active::before { position: absolute; inset: 0; background-color: rgb(0, 0, 0); }
+.dsx46-zero-pseudo::after { content: ''; position: absolute; left: 0; top: 0; width: 0;
+  height: 0; overflow: hidden; }
+.dsx46-zero-pseudo:active::after { background-color: rgb(0, 0, 0); }
+.dsx46-display-none .layer { display: none; }
+.dsx46-display-none:active .layer { background-color: rgb(0, 0, 0); }
+.dsx46-visibility-hidden .layer { visibility: hidden; }
+.dsx46-visibility-hidden:active .layer { background-color: rgb(0, 0, 0); }
+.dsx46-zero-size .layer { inset: auto; left: 0; top: 0; width: 0; height: 0; overflow: hidden; }
+.dsx46-zero-size:active .layer { background-color: rgb(0, 0, 0); }
+.dsx46-clear-ancestor .layer { opacity: 0; }
+.dsx46-clear-ancestor .layer > span { position: absolute; inset: 0; }
+.dsx46-clear-ancestor:active .layer > span { background-color: rgb(0, 0, 0); }
+.dsx46-painted-pseudo:active::before { content: ''; position: absolute; inset: 0;
+  background-color: rgb(0, 0, 0); }
+.dsx46-painted-background:active { background-color: rgb(0, 0, 0); }
+`;
+
+interface Probe {
+  name: string;
+  className: string;
+  /** Whether pressing it changes painted pixels. */
+  visible: boolean;
+}
+
+const PROBES: readonly Probe[] = [
+  { name: '::before without content', className: 'dsx46-no-content', visible: false },
+  { name: 'zero-size ::after', className: 'dsx46-zero-pseudo', visible: false },
+  { name: 'display:none child', className: 'dsx46-display-none', visible: false },
+  { name: 'visibility:hidden child', className: 'dsx46-visibility-hidden', visible: false },
+  { name: 'zero-size child', className: 'dsx46-zero-size', visible: false },
+  { name: 'child under opacity:0 ancestor', className: 'dsx46-clear-ancestor', visible: false },
+  { name: '::before with content', className: 'dsx46-painted-pseudo', visible: true },
+  { name: 'own background', className: 'dsx46-painted-background', visible: true },
+];
+
+/** Unpainted changes must not count as a pressed look; painted ones must. */
+async function checkJudgement(): Promise<void> {
+  const style = document.createElement('style');
+  style.id = PROBE_STYLE_ID;
+  style.textContent = PROBE_CSS;
+  document.head.append(style);
+  try {
+    for (const probe of PROBES) {
+      const element = document.createElement('div');
+      element.className = `dsx46-probe ${probe.className}`;
+      const layer = document.createElement('div');
+      layer.className = 'layer';
+      layer.append(document.createElement('span'));
+      element.append('Probe', layer);
+      document.body.append(element);
+      const change = await pressedChange(element);
+      element.remove();
+      expect(change.steady, `probe ${probe.name}: two rest screenshots agree`).toBe(0);
+      if (probe.visible) {
+        expect(change.pressed, `probe ${probe.name}: counts as pressed`).toBeGreaterThan(0);
+      } else {
+        expect(change.pressed, `probe ${probe.name}: does not count`).toBe(0);
+      }
+    }
+  } finally {
+    style.remove();
+  }
 }
 
 interface ClickableCase {
@@ -277,12 +451,13 @@ it(
   '[AC-DSX-46-PRESS#1] 每个可点基础件按下（:active）时背景、透明度或缩放与常态不同，且无 WebView 点按高亮',
   TEST,
   async () => {
+    await checkJudgement();
     for (const item of clickableCases()) {
       show(item.render());
       const host = await visible(item.host());
-      const rest = look(host);
-      const pressed = await whileForced(host, ['active'], () => look(host));
-      expect(pressed, `${item.name}: pressed look differs from rest`).not.toBe(rest);
+      const change = await pressedChange(host);
+      expect(change.steady, `${item.name}: two rest screenshots agree`).toBe(0);
+      expect(change.pressed, `${item.name}: pressed pixels differ`).toBeGreaterThan(0);
       expect(['rgba(0, 0, 0, 0)', 'transparent'], `${item.name}: tap highlight`).toContain(
         getComputedStyle(host).getPropertyValue('-webkit-tap-highlight-color'),
       );
