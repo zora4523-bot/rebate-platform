@@ -21,7 +21,8 @@
 // - platforms = union REGISTERED_PLATFORMS (the bill is seeded daily for every app × platform);
 // - inviteRewardTrigger (B2-04zzc, D10-805 ②) = growth createInviteRewardTrigger over the runtime
 //   handles below, orders' createInviteRewardOrderFacts and content's configuration reader on the
-//   caller's transaction (optional for SettlementModule, always given by app.module on the worker).
+//   caller's transaction (optional for SettlementModule, always given by app.module on the worker);
+//   the order facts it reads carry the credit's booked base as base_fen (D10-810).
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 import type { Ledger, OrderNetSelection, OrderNets } from '../../ledger/index.ts';

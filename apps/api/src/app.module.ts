@@ -119,6 +119,7 @@ import {
   createInviteRewardPayout,
   createInviteRewardQualifier,
   createInviteRewardScanner,
+  createInviteRewardTrigger,
   inviteRewardScannerToken,
   createLandingInviteBinder,
   createMyInviteReader,
@@ -3837,7 +3838,47 @@ function settlementWorkerModule(): DynamicModule {
       get: async (appId, key) =>
         (await createContentReader({ db, clock }).configValue(appId, key))?.value,
     }),
+    // B2-04zzc (D10-805 ②): R5 hands each credited order to growth's invite reward trigger on the
+    // credit's transaction (savepoint inside, failures logged and swallowed).
+    inviteRewardTrigger: ({ db, clock, logger }) => {
+      const facts = createInviteRewardOrderFacts();
+      const config = transactionConfig(clock);
+      return {
+        onCredited: (trx, input) =>
+          createInviteRewardTrigger({
+            db,
+            clock,
+            logger,
+            config,
+            orders: bookedBaseOrderFacts(facts, input),
+          }).onCredited(trx, { app_id: input.app_id, order_id: input.order_id }),
+      };
+    },
   });
+}
+
+/**
+ * D10-810: the B of BR-INV-24 ②'s「B > 0」is the booked base the credit just wrote, not the
+ * estimated orders.base_fen orders' fact port reads; the credited order's fact carries it.
+ */
+function bookedBaseOrderFacts(
+  facts: ReturnType<typeof createInviteRewardOrderFacts>,
+  credited: {
+    readonly app_id: string;
+    readonly order_id: string;
+    readonly booked_base_fen: bigint;
+  },
+): ReturnType<typeof createInviteRewardOrderFacts> {
+  return {
+    async read(trx, input) {
+      const fact = await facts.read(trx, input);
+      if (fact === null || fact.app_id !== credited.app_id || fact.order_id !== credited.order_id) {
+        return fact;
+      }
+      return { ...fact, base_fen: credited.booked_base_fen };
+    },
+    listSelfOrdersInWindow: (trx, input) => facts.listSelfOrdersInWindow(trx, input),
+  };
 }
 
 type SharedContentReader = (db: Kysely<Database>, clock: Clock) => ContentReader;
