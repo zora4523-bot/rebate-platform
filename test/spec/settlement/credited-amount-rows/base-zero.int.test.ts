@@ -173,7 +173,7 @@ it(
       );
       await pushed.read.balanced();
       expect(await pushed.read.balance()).toEqual({ available_fen: 0n, frozen_fen: 0n });
-      expect(await eventsAfterCredit(pushed)).toEqual(['RIGHTS_PARTIAL', 'BASE_ZERO']);
+      expect(await eventsAfterCredit(pushed)).toEqual(['RIGHTS_PARTIAL', 'RIGHTS_FULL']);
 
       // Straight from the credit (booked 900 / 1000): the same R8, nothing to push either.
       const direct = await creditedOrder(p.db, r.w);
@@ -197,7 +197,7 @@ it(
       );
       await direct.read.balanced();
       expect(await direct.read.balance()).toEqual({ available_fen: 0n, frozen_fen: 0n });
-      expect(await eventsAfterCredit(direct)).toEqual(['BASE_ZERO']);
+      expect(await eventsAfterCredit(direct)).toEqual(['RIGHTS_FULL']);
     });
   },
   TIMEOUT,
