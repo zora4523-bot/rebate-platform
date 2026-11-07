@@ -256,6 +256,8 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           ...(live.fallbackWarn === undefined ? {} : { fallbackWarn: live.fallbackWarn }),
           ...(live.orderSlots === undefined ? {} : { orderSlots: live.orderSlots }),
           ...(live.orderWarn === undefined ? {} : { orderWarn: live.orderWarn }),
+          // B1-04zzu: the refund archive's own-order lookup as it is.
+          ...(live.ownOrders === undefined ? {} : { ownOrders: live.ownOrders }),
         });
       }
       if (endpoint.platform === 'jd' && endpoint.mode === 'live' && options.jdLive) {

@@ -29,6 +29,7 @@ import {
   beijingText,
   isRecord,
   parseTaobaoRawData,
+  TaobaoRawNumber,
   taobaoAbsent,
   taobaoBeijingDate,
   taobaoDecimalId,
@@ -69,25 +70,94 @@ export type TaobaoOwnOrderReader = (
 ) => Promise<ReadonlySet<string>>;
 
 /**
- * B1-04zzu: the readable tb_trade_id of the rows of a refund body's data.result (a non-blank string
- * as is, a JSON integer as its decimal text), deduplicated in page order. A row whose tb_trade_id
- * is missing or invalid, or that is not an object, gives none; so does a body that is not JSON or
- * whose result is not an array.
+ * B1-04zzu: tb_trade_id of a refund row as mapTaobaoRefund reads it (requiredId): a string that is
+ * not blank and not "--" as is, a JSON integer literal as its decimal text; otherwise (missing,
+ * JSON null, blank, "--", another type, or a row that is not an object) null, i.e. unreadable.
+ */
+function refundTradeId(row: unknown): string | null {
+  if (!isRecord(row) || row instanceof TaobaoRawNumber) return null;
+  const value = row.tb_trade_id;
+  if (typeof value === 'string') return value.trim() === '' || value === '--' ? null : value;
+  return taobaoDecimalId(value);
+}
+
+/**
+ * The data.result list of a refund body as a tree with every JSON number kept as its literal, or
+ * null when there is none (data not an object, result not an array). Throws when the body is not
+ * JSON.
+ */
+function refundTree(
+  body: string,
+): {
+  readonly tree: Record<string, unknown>;
+  readonly data: Record<string, unknown>;
+  readonly list: unknown[];
+} | null {
+  // 先确认正文是一个完整的 JSON 值（不是就抛），再借 parseTaobaoRawData（数字保原文）取整棵树。
+  const plain: unknown = JSON.parse(body);
+  if (!isRecord(plain)) return null;
+  // 包一层 data 让 parseTaobaoRawData 交回整棵正文树（它返回外层的 data 成员）。
+  const tree = parseTaobaoRawData(`{"data":${body}}`, OPERATION);
+  const data = tree.data;
+  if (!isRecord(data) || data instanceof TaobaoRawNumber) return null;
+  const list = data.result;
+  if (!Array.isArray(list)) return null;
+  return { tree, data, list };
+}
+
+/**
+ * B1-04zzu: the readable tb_trade_id of the rows of a refund body's data.result (read as
+ * mapTaobaoRefund reads it: a string that is not blank and not "--" as is, a JSON integer as its
+ * decimal text), deduplicated in page order. A row whose tb_trade_id is missing or unreadable
+ * (JSON null, blank, "--", another type), or that is not an object, gives none; so does a body that
+ * is not JSON, whose data is not an object or whose result is not an array.
  */
 export function taobaoRefundTradeIds(body: string): readonly string[] {
-  void body;
-  throw new Error('NotImplemented: taobaoRefundTradeIds');
+  let found: ReturnType<typeof refundTree>;
+  try {
+    found = refundTree(body);
+  } catch {
+    return [];
+  }
+  if (found === null) return [];
+  const ids = new Set<string>();
+  for (const row of found.list) {
+    const id = refundTradeId(row);
+    if (id !== null) ids.add(id);
+  }
+  return [...ids];
 }
 
 /**
  * B1-04zzu: the refund body to archive: data.result without the rows whose tb_trade_id is readable
- * and not in `own`; rows whose tb_trade_id cannot be read stay; every other member and every JSON
- * number literal is kept as received. Nothing to drop (or result not an array): the body as received.
+ * (as taobaoRefundTradeIds reads it) and not in `own`; rows whose tb_trade_id cannot be read stay,
+ * in upstream order; every other member and every JSON number literal is kept as received. Nothing
+ * to drop (or data not an object, result not an array): the body as received. Throws when the body
+ * is not JSON. Pure: no warning, no log.
  */
 export function taobaoRefundArchiveBody(body: string, own: ReadonlySet<string>): string {
-  void body;
-  void own;
-  throw new Error('NotImplemented: taobaoRefundArchiveBody');
+  const found = refundTree(body);
+  if (found === null) return body;
+  const kept = found.list.filter((row) => {
+    const id = refundTradeId(row);
+    return id === null || own.has(id);
+  });
+  if (kept.length === found.list.length) return body;
+  found.data.result = kept;
+  return literalJson(found.tree);
+}
+
+/** JSON text of a parsed tree, every TaobaoRawNumber written as its literal (as punishments.ts). */
+function literalJson(value: unknown): string {
+  if (value instanceof TaobaoRawNumber) return value.text;
+  if (Array.isArray(value)) return `[${value.map(literalJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    const members = Object.entries(value).map(
+      ([name, member]) => `${JSON.stringify(name)}:${literalJson(member)}`,
+    );
+    return `{${members.join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export const TAOBAO_REFUND_PATH = '/api/tb-service/get-order-refund';

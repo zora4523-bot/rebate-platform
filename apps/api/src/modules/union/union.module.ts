@@ -45,6 +45,7 @@ import {
 import type { UnionTransport } from './infra/replay.ts';
 import type {
   TaobaoOrderSlotReader,
+  TaobaoOwnOrderReader,
   TaobaoOrderWarning,
   TaobaoSearchSlotReader,
   TaobaoSearchWarning,
@@ -326,6 +327,26 @@ function logJdWarning(logger: RootLogger, warning: JdWarning): void {
   );
 }
 
+/**
+ * B1-04zzu (D10-796 ② 甲): the live Taobao adapter's own-order lookup for the refund archive,
+ * orders' read (UnionModuleOptions.taobaoOwnOrders) over the optional database read per call with
+ * ctx.appId. Without a database it rejects `adapter_unimplemented` without asking (the archive then
+ * stores the body as received; without a database nothing is archived anyway).
+ */
+function taobaoOwnOrders(source: QueryPidSource, read: UnionTaobaoOwnOrders): TaobaoOwnOrderReader {
+  return async (appId, orderNos) => {
+    const db = source.db;
+    if (db === undefined) {
+      throw new UnionError(
+        'adapter_unimplemented',
+        'Union adapter for taobao has no database to read the stored orders from (listRefunds)',
+        'taobao',
+      );
+    }
+    return read(db, appId, orderNos);
+  };
+}
+
 /** Filled by the UNION_QUERY_PID_SOURCE provider; `db` stays undefined without a database. */
 interface QueryPidSource {
   db: Kysely<Database> | undefined;
@@ -463,6 +484,7 @@ async function startUnionRegistry(
   source: QueryPidSource,
   priceConfig: PriceConfigSource | undefined,
   searchCounter: TaobaoSearchCounter,
+  ownOrders: UnionTaobaoOwnOrders | undefined,
 ): Promise<UnionRegistry> {
   const options = {
     endpoints,
@@ -555,6 +577,8 @@ async function startUnionRegistry(
             // The slot reader only with the order source; it needs the optional database per call.
             orderSlots: taobaoOrderSlots(source),
             orderWarn: (warning: TaobaoOrderWarning) => logTaobaoOrderWarning(logger, warning),
+            // B1-04zzu: the refund archive keeps only 凑狸's stored orders (orders' read).
+            ...(ownOrders === undefined ? {} : { ownOrders: taobaoOwnOrders(source, ownOrders) }),
           }),
     };
   }
@@ -651,6 +675,7 @@ export class UnionModule {
               source,
               priceConfig,
               searchCounter,
+              options.taobaoOwnOrders,
             ),
         },
         { provide: taobaoSearchCounterToken(), useValue: searchCounter },

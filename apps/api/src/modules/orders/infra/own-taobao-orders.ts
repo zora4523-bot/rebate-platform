@@ -8,15 +8,30 @@ import type { Kysely } from 'kysely';
 /**
  * The members of `orderNos` that name a stored taobao order of `appId` in app.orders: equal,
  * verbatim, to its sub_order_id or its parent_order_id. An empty `orderNos` reads nothing and
- * answers an empty set. Read only (no lock, no write, no log).
+ * answers an empty set. Read only (no lock, no write, no log); one statement.
  */
-export function readOwnTaobaoOrderNos(
+export async function readOwnTaobaoOrderNos(
   db: Kysely<DB>,
   appId: string,
   orderNos: readonly string[],
 ): Promise<ReadonlySet<string>> {
-  void db;
-  void appId;
-  void orderNos;
-  throw new Error('NotImplemented: readOwnTaobaoOrderNos');
+  const asked = [...new Set(orderNos)];
+  if (asked.length === 0) return new Set();
+  const rows = await db
+    .withSchema('app')
+    .selectFrom('orders')
+    .select(['sub_order_id', 'parent_order_id'])
+    .where('app_id', '=', appId)
+    .where('platform', '=', 'taobao')
+    .where((eb) => eb.or([eb('sub_order_id', 'in', asked), eb('parent_order_id', 'in', asked)]))
+    .execute();
+  const wanted = new Set(asked);
+  const found = new Set<string>();
+  for (const row of rows) {
+    if (wanted.has(row.sub_order_id)) found.add(row.sub_order_id);
+    if (row.parent_order_id !== null && wanted.has(row.parent_order_id)) {
+      found.add(row.parent_order_id);
+    }
+  }
+  return found;
 }
