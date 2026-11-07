@@ -16,10 +16,21 @@
 //     order; failed / rejected calls add none. 0 → order_list.empty; exactly 1 →
 //     order_reason.<reason_code>.summary when reason_code is not null, else
 //     order_status.<display_status>.summary; more than 1 → order_list.summary.
+//     explain_order by order_no (BR-AI-07 判定 3 / 4; tools/orders marks it with trace.lookup):
+//       · lookup 'not_tracked' (no own order with that number; the claim_draft card goes out) counts
+//         as one entry with reason_code NOT_TRACKED, so on its own the key is
+//         order_reason.NOT_TRACKED.summary, never order_list.empty;
+//       · lookup 'rate_limited' (over agent.explain_order.order_no_daily_max, the lookup did not
+//         run, no card) adds no entry and writes agent.order.lookup_limited after the orders key;
+//         a run whose order calls were all rate limited (0 entries) writes only
+//         agent.order.lookup_limited, never order_list.empty.
+//     Rule tests run the real tools/orders handler behind the real ToolRegistry, so the marker is
+//     whatever tools/orders actually returns (core-reply-templates/orders-lookup.test.ts).
 //   - rules (any search_rules call): agent.rule.found when some ok search_rules call's
 //     outcome.trace.matched is true (tools/rules), else agent.rule.not_found (no hit, failed or
 //     rejected).
-//   Order of the keys when both kinds were called: orders, then rules. Each key is one
+//   Order of the keys when both kinds were called: orders (then agent.order.lookup_limited), then
+//   rules. Each key is one
 //   texts.text(appId, key) written as one ctx.text, through the run's output caps.
 //
 // Delivery rule (BR-AI-07「本 run 调用过订单类工具或 search_rules 时，模型生成的文本一律不下发」):
@@ -60,11 +71,18 @@ export interface ReplyTemplateOrder {
 }
 
 /**
+ * explain_order by order_no only (BR-AI-07 判定 3 / 4): 'not_tracked' = no own order with that
+ * number (claim_draft card); 'rate_limited' = over the daily by-number limit, lookup not run.
+ */
+export type ReplyTemplateLookup = 'not_tracked' | 'rate_limited';
+
+/**
  * The template inputs a template tool's ok outcome carries on `trace`, next to the
- * ToolTraceFragment members (never part of modelView): `orders` from list_my_orders /
- * explain_order, `matched` from search_rules.
+ * ToolTraceFragment members (never part of modelView): `orders` (and `lookup` for explain_order
+ * by order_no) from list_my_orders / explain_order, `matched` from search_rules.
  */
 export interface ReplyTemplateTrace extends ToolTraceFragment {
   readonly orders?: readonly ReplyTemplateOrder[];
+  readonly lookup?: ReplyTemplateLookup;
   readonly matched?: boolean;
 }
