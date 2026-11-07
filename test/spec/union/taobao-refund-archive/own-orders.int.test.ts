@@ -1,6 +1,6 @@
 // B1-04zzu（D10-796 ② 甲）：orders 的只读「自家淘宝订单查询」readOwnTaobaoOrderNos 在真库上的取值：所问单号里，
 // 与本 app 已入库的淘宝订单的 sub_order_id 或 parent_order_id 原样相等的那些。别的 app、别的平台不算；只命中
-// parent_order_id 也算；空入参答空集。真库按 TEST_PG_ADMIN_URL 克隆（@couli/db/testing），应用角色连接；
+// parent_order_id 也算；空入参答空集。真库由 @couli/db/testing 的 createTestDatabase 克隆，应用角色连接；
 // 订单行用 orders/list-detail 的夹具写入（只读复用）。单号全部合成。
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
