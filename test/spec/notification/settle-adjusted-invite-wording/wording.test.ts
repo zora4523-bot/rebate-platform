@@ -107,7 +107,7 @@ it('[AC-B1-12zd#4] 邀请行的标题与正文都不含「邀请奖励」：两�
       }
     }
   }
-  expect(seen).toHaveLength(24);
+  expect(seen).toHaveLength(36);
   for (const text of seen) expect(text).not.toContain(CAMPAIGN_TERM);
 });
 
