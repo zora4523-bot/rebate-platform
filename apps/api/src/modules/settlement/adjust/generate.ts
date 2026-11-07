@@ -236,18 +236,26 @@ export function createSettleAdjustGenerator(
   }
 
   /**
-   * The rows of the approval route. A member's row is the new share less the net already credited
-   * (BR-FUND-08 / 09; the approval credits that whole difference and closes an open obligation, so
-   * a deferred amount is part of it, never taken off it — money review r1 S0): a frozen or appealing
-   * member is written as usual (the state is judged again at approval, D10-770 ②); a member whose
-   * share the plan gives
-   * the platform (banned, deleting / deleted, minor, forfeited) gets no row. The platform row is
-   * the plan's platform difference, either sign.
+   * The rows of the approval route.
+   * - The base grew (B_settle > booked_base): the shares are split again. A member's row is the new
+   *   share less the net already credited (BR-FUND-08 / 09; the approval credits that whole
+   *   difference and closes an open obligation, so a deferred amount is part of it, never taken
+   *   off it — money review r1 S0). A frozen or appealing member is written as usual (the state is
+   *   judged again at approval, D10-770 ②); a member whose share the plan gives the platform
+   *   (banned, deleting / deleted, minor, forfeited) gets no row.
+   * - The base did not change (only the commission did, BR-FUND-09: 基数不变只调平台): no member
+   *   row at all — the members are neither credited nor charged and their obligations stay as they
+   *   are (money review r2 S0).
+   * The platform row is the plan's platform difference, either sign.
    */
-  function rowsOf(input: AdjustmentBeneficiary[], plan: AdjustmentPlan): CandidateRow[] {
+  function rowsOf(
+    input: AdjustmentBeneficiary[],
+    plan: AdjustmentPlan,
+    baseGrew: boolean,
+  ): CandidateRow[] {
     const before = new Map(input.map((b) => [identity(b.user_id, b.role), b]));
     const rows: CandidateRow[] = [];
-    for (const r of plan.beneficiaries) {
+    for (const r of baseGrew ? plan.beneficiaries : []) {
       const b = before.get(identity(r.user_id, r.role));
       if (b === undefined || b.status === 'forfeited' || r.forfeit_reason !== null) continue;
       const diff = subFen(r.entitlement_fen, b.net_fen);
@@ -293,9 +301,9 @@ export function createSettleAdjustGenerator(
       // Only the positive route (BR-FUND-09 ②): cheap check before any user lock.
       const { after_reserve_fen: baseSettle } = applyReserve(settle, reserveBp);
       const nPositive = settle > 0n ? settle : 0n;
+      const baseGrew = baseSettle > order.booked_base_fen;
       const positiveRoute =
-        baseSettle > order.booked_base_fen ||
-        (baseSettle === order.booked_base_fen && nPositive > order.booked_n_fen);
+        baseGrew || (baseSettle === order.booked_base_fen && nPositive > order.booked_n_fen);
       if (!positiveRoute) return { kind: 'skipped' };
 
       if (clawbackGate) {
@@ -361,7 +369,7 @@ export function createSettleAdjustGenerator(
         beneficiaries,
       });
       if (plan.route !== 'approval') return { kind: 'skipped' };
-      const rows = rowsOf(beneficiaries, plan);
+      const rows = rowsOf(beneficiaries, plan, baseGrew);
       if (rows.length === 0) return { kind: 'skipped' };
 
       const now = clock.now();
