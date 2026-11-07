@@ -203,9 +203,22 @@ export function planOrderQuantities(
   current: OrderQuantityColumns,
   incoming: Pick<UnionOrder, 'quantity' | 'refunded_quantity'>,
 ): OrderQuantityPlan {
-  void current;
-  void incoming;
-  throw new Error('NotImplemented: planOrderQuantities');
+  const quantity = planCount(current.quantity, incoming.quantity);
+  const refunded = planCount(current.refunded_quantity, incoming.refunded_quantity);
+  const alerts: OrderQuantityAlert[] = [];
+  if (quantity.decreased) alerts.push('quantity_decreased');
+  if (refunded.decreased) alerts.push('refunded_quantity_decreased');
+  return { quantity: quantity.value, refunded_quantity: refunded.value, alerts };
+}
+
+/** 一列：没给沿用库内值；给了且不小于库内值（或库内为空）取新值；变小保留库内值并标记。 */
+function planCount(
+  stored: number | null,
+  reported: number | null | undefined,
+): { readonly value: number | null; readonly decreased: boolean } {
+  if (reported === undefined || reported === null) return { value: stored, decreased: false };
+  if (stored !== null && reported < stored) return { value: stored, decreased: true };
+  return { value: reported, decreased: false };
 }
 
 /**

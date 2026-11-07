@@ -303,6 +303,10 @@ const FULL_CAUSES: readonly ClawbackCause[] = [
 const ALERT_WAIT = 'clawback_wait_commission';
 const ALERT_ESTIMATE = 'estimate_changed_after_credit';
 const ALERT_JD_ZERO = 'clawback_jd_commission_zero';
+/** B1-08zi：京东已退件数超过入账定格、开关关时只告警。 */
+const ALERT_JD_REFUND_R9_OFF = 'jd_refunded_quantity_r9_disabled';
+/** B1-08zi（D10-814 ⑥）：京东已退件数驱动 R9 的开关，content 配置项（boolean，默认关）。 */
+const JD_REFUND_R9_SWITCH = 'orders.jd.refunded_quantity_r9_enabled';
 
 /** A snapshot beneficiary no longer in app.users: treated as deleted (same as B2-04m). */
 const MISSING_USER: CreditBeneficiaryState = Object.freeze({
@@ -1275,8 +1279,30 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     const newSettleFen = newSeq === null ? null : order.settle_commission_fen;
 
     const estChanged = change.est_after !== change.est_before;
-    const refundIncreased =
-      (order.refunded_quantity ?? 0) > (order.refunded_quantity_at_credit ?? 0);
+    // B1-08zi（D10-814 ⑥）：京东的已退件数增加挂开关 orders.jd.refunded_quantity_r9_enabled（默认关）；
+    // 关时不作为 R9 触发、不动钱，只写告警，其余判定照常（如同未增加）。其他平台照旧。
+    const refundRoute = refundQuantityRoute(
+      order,
+      order.platform === 'jd' &&
+        (order.refunded_quantity ?? 0) > (order.refunded_quantity_at_credit ?? 0)
+        ? jdRefundR9Enabled(await deps.config.get(order.app_id, JD_REFUND_R9_SWITCH))
+        : false,
+    );
+    if (refundRoute === 'alert_only') {
+      logger.warn(
+        {
+          alert: ALERT_JD_REFUND_R9_OFF,
+          app_id: order.app_id,
+          order_id: order.order_id,
+          order_key: key,
+          platform: order.platform,
+          refunded_quantity: order.refunded_quantity,
+          refunded_quantity_at_credit: order.refunded_quantity_at_credit,
+        },
+        'jd refunded quantity above the credit baseline; R9 switch off, no clawback',
+      );
+    }
+    const refundIncreased = refundRoute === 'r9';
     const settled = change.settle_commission_fen !== null;
     const r9 =
       refundIncreased ||
@@ -1348,9 +1374,9 @@ export function refundQuantityRoute(
   order: RefundQuantityFacts,
   jdR9Enabled: boolean,
 ): RefundQuantityRoute {
-  void order;
-  void jdR9Enabled;
-  throw new Error('NotImplemented: refundQuantityRoute');
+  if ((order.refunded_quantity ?? 0) <= (order.refunded_quantity_at_credit ?? 0)) return 'none';
+  if (order.platform !== 'jd') return 'r9';
+  return jdR9Enabled ? 'r9' : 'alert_only';
 }
 
 /**
@@ -1358,6 +1384,5 @@ export function refundQuantityRoute(
  * 未设置（undefined / null）与其他任何值都是关（默认关）。
  */
 export function jdRefundR9Enabled(value: unknown): boolean {
-  void value;
-  throw new Error('NotImplemented: jdRefundR9Enabled');
+  return value === true;
 }
