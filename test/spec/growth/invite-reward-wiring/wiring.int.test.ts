@@ -97,9 +97,17 @@ async function expectGranted(pair: Pair, party: Party): Promise<void> {
   );
 }
 
-/** Only `paid` parties have a voucher in the app. */
+/**
+ * Only `paid` parties have a voucher for this pair: of the app's vouchers, those keyed
+ * INVITE_REWARD:{invitee}: or carrying the pair's invitee as biz_id (other pairs of the same app
+ * are not counted).
+ */
 async function expectVoucherKeys(pair: Pair, paid: readonly Party[]): Promise<void> {
-  expect((await vouchers(db, pair.appId)).map((v) => v.uniq_key)).toEqual(
+  const prefix = `INVITE_REWARD:${pair.invitee}:`;
+  const mine = (await vouchers(db, pair.appId)).filter(
+    (v) => v.uniq_key.startsWith(prefix) || v.biz_id === pair.invitee,
+  );
+  expect(mine.map((v) => v.uniq_key)).toEqual(
     paid.map((party) => rewardKey(pair.invitee, party)).sort(),
   );
 }
