@@ -109,6 +109,6 @@ export interface SettlementWorkerPorts {
    * Optional: without it the credit triggers nothing.
    */
   readonly inviteRewardTrigger?: (runtime: SettlementInviteTriggerRuntime) => CreditInviteTrigger;
-  /** admin's system audit writer (optional, see the header). */
-  readonly systemAudit?: SettleAdjustAudit;
+  /** admin's createSystemAuditWriter over the worker's clock (optional, see the header). */
+  readonly systemAudit?: (clock: Clock) => SettleAdjustAudit;
 }

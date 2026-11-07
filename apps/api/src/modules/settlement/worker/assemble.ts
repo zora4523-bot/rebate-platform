@@ -195,7 +195,7 @@ export function createSettleWorkerHandler(
     readSnapshot: ports.readSnapshot,
     readOrderNets: ports.readOrderNets,
     config,
-    audit: ports.systemAudit ?? MISSING_SYSTEM_AUDIT,
+    audit: ports.systemAudit?.(clock) ?? MISSING_SYSTEM_AUDIT,
   });
   const adjust = createSettleAdjustJob({ db, clock, generator });
   return createSettleJobHandler({ db, logger, bill, executor, adjust });
