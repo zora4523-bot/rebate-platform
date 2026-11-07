@@ -87,6 +87,8 @@ it(
         reason: 'banned',
       }),
     );
+    // The settlement record is written strictly after the seeded CLAWBACK (决-10 A takes it).
+    h.clock.advanceMs(15 * 60_000);
     const seq = await h.settle(o, 1300n);
     // The seeded state the case is about (BR-FUND-08 net of the forfeited share, platform net).
     expect(await h.netOf(o, 'self')).toBe(-83n);
