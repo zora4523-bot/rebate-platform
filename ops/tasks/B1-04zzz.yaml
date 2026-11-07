@@ -1,18 +1,16 @@
 id: B1-04zzz
 repo: rebate-platform
-title: content：登记淘宝回扫五个配置键（order_sync.rescan.taobao.enabled / .days / .hour.enabled / .week.enabled / .window_minutes），生产装配钉 promo_mode 与 window_minutes 生效（FU-RESCAN-CONFIG-WIRING，D10-845）
+title: 淘宝回扫配置生产装配：钉 promo_mode 开时三档按 20 分钟切、后台改 window_minutes 生效（FU-RESCAN-CONFIG-WIRING，D10-845 / D10-877；五键登记在前置 chore/test-change-B1-04zzz-tb-rescan-keys）
 type: impl
-# 2026-11-07 W1 入账（D10-845，16:15 收窄）。B1-04zzb / B1-04zzr 的淘宝回扫键都没登记进 config-registry（jd / pdd 在 :259–262），后台改不了、只能走默认。照 jd / pdd 的写法登记：两个开关 boolean、days 与 window_minutes 为 config.business 整数（days 1～90 同现有读取校验；window_minutes 1～180，09 CAP-TB-07 日常单次 ≤3 小时、大促 ≤20 分钟），照 D10-874（同 D10-873）不建种子：五键在注册表末尾自成一组（接在 B1-08zi 的 ORDERS_JD_UNSEEDED 之后，本单排在 B1-08zi 之后），冻结 test/spec/content/config-items/kit.ts 只追加 ORDER_RESCAN_TAOBAO_UNSEEDED（五键按注册表顺序）并进 [AC-F1-10e#1] / [#3] / [#56]、[AC-F1-02zj#2]、read.int [#10]、writes.int [AC-F1-02zj#13]，照 D10-327 由新鲜独立 Claude 改、逐条列在 PR，默认值由注册表给。
+# 2026-11-07 W1 入账（D10-845，16:15 收窄）。B1-04zzb / B1-04zzr 的淘宝回扫键都没登记进 config-registry（jd / pdd 在 :259–262），后台改不了、只能走默认。照 jd / pdd 的写法登记：两个开关 boolean、days 与 window_minutes 为 config.business 整数（days 1～90 同现有读取校验；window_minutes 1～180，09 CAP-TB-07 日常单次 ≤3 小时、大促 ≤20 分钟），照 D10-877（同 D10-876）拆前置：五键登记（config-registry.ts 末尾一组，接在 B1-08zi 之后）、冻结 kit 追加 ORDER_RESCAN_TAOBAO_UNSEEDED 与引用它的冻结用例只追加、两个 src 单测计数 +5，都在前置 chore/test-change-B1-04zzz-tb-rescan-keys 里做（排在 B1-08zi 的前置之后）；本单只留生产装配接线（如需）与 rescan-config-wiring 规则测试，不建种子。
 # promo_mode 不用改读法：开关与配置同读 config_items（content-reader.configValue），只登记。规则测试走生产装配（worker 的 rescanConfig = content 读 ORDER_SYNC_APP_ID 的 config_items）：order_sync.promo_mode 行为 true 时三档都按 20 分钟切；改 window_minutes 行后下一轮按新值切；登记表含五键且类型 / 权限 / 范围如上。不改 app.module 与 orders。
 refs: []
 refs_hash: {}
 deps: [B1-04zzr]
 paths:
-  - 'apps/api/src/modules/content/domain/config-registry.ts'
-  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/orders/rescan-config-wiring/**'
-  - 'test/spec/content/config-items/**'
 impl: claude
 tester: claude-independent
 accept:
