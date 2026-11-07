@@ -257,6 +257,15 @@ it('[AC-B1-09u#11] rows stored before the migration read reason_sub_manual = fal
       defaultExpr: 'false',
       hasMissing: true,
     });
+    // The missing value itself must be false: a column first added with DEFAULT true and then
+    // switched to DEFAULT false keeps true as the missing value, marking every earlier row manual.
+    const missing = await sql<{ missing: string | null }>`
+      SELECT a.attmissingval::text AS missing
+      FROM pg_attribute a
+      WHERE a.attrelid = to_regclass(${`app.${table}`}) AND a.attname = 'reason_sub_manual'
+        AND a.attnum > 0 AND NOT a.attisdropped
+    `.execute(app);
+    expect(missing.rows, `${table}.reason_sub_manual attmissingval`).toEqual([{ missing: '{f}' }]);
   }
   // The migration adds no missing value to the nullable reason_sub columns (they read NULL).
   for (const table of ['rights_imports', 'order_rights']) {
