@@ -52,9 +52,10 @@ it('[AC-B1-08zi#25] 任意件数：none 恰在未增加时；京东开关关从�
       fc.property(platform, count, count, fc.boolean(), (code, refunded, atCredit, enabled) => {
         const route = refundQuantityRoute(facts(code, refunded, atCredit), enabled);
         const increased = (refunded ?? 0) > (atCredit ?? 0);
-        if (!increased) return route === 'none';
-        if (code !== 'jd') return route === 'r9';
-        return route === (enabled ? 'r9' : 'alert_only');
+        let expected: RefundQuantityRoute = 'none';
+        if (increased) expected = code !== 'jd' || enabled ? 'r9' : 'alert_only';
+        expect(route).toBe(expected);
+        return true;
       }),
       propParams(),
     ),

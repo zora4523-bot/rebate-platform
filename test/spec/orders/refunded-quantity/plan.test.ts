@@ -137,11 +137,8 @@ it('[AC-B1-08zi#13] 任意库内值与报文：结果不小于库内值，只取
           ...(q.decreased ? ['quantity_decreased'] : []),
           ...(r.decreased ? ['refunded_quantity_decreased'] : []),
         ];
-        return (
-          plan.quantity === q.value &&
-          plan.refunded_quantity === r.value &&
-          JSON.stringify(plan.alerts) === JSON.stringify(alerts)
-        );
+        expect(plan).toEqual({ quantity: q.value, refunded_quantity: r.value, alerts });
+        return true;
       }),
       propParams(),
     ),

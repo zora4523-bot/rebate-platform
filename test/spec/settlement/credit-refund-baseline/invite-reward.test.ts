@@ -87,7 +87,8 @@ it('[AC-B1-08zi#31] 任意组合与手算结果一致', () => {
           });
           const increased = (refunded ?? 0) > (atCredit ?? 0);
           const expected = rebate !== 'CREDITED' || (increased && (code !== 'jd' || enabled));
-          return inviteRewardOrderClawedBack(fact, enabled) === expected;
+          expect(inviteRewardOrderClawedBack(fact, enabled)).toBe(expected);
+          return true;
         },
       ),
       propParams(),

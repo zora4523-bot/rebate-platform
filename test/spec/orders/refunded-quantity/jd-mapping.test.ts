@@ -112,7 +112,8 @@ it('[AC-B1-08zi#6] 任意 0..int4 上限的整数原样映射；与 validCode、
           actualFee: num('7.89'),
           actualCosPrice: num('44.10'),
         });
-        return result.quantity === quantity && result.refunded_quantity === refunded;
+        expect(result).toEqual({ quantity, refunded_quantity: refunded });
+        return true;
       }),
       propParams(),
     ),
