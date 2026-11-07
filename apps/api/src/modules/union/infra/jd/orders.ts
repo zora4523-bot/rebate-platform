@@ -266,3 +266,17 @@ export function mapJdOrder(
     raw_payload_id: page.rawPayloadId,
   });
 }
+
+/**
+ * B1-08zi（FU-REFUNDED-QUANTITY-WRITER，D10-814 ①）：一条订单行（内层数字是 JdRawNumber）的件数与已退件数，
+ * mapJdOrder 把结果并进 DTO。skuNum → quantity、skuReturnNum → refunded_quantity：缺键或 JSON null 为 null；
+ * 有值必须是十进制非负整数原文且不超过 int4 上限（orders 列是 integer），否则 invalid_dto（错误信息只带字段名）。
+ * 不由 validCode、金额或其他字段推算。
+ */
+export function jdQuantityFields(row: Readonly<Record<string, unknown>>): {
+  readonly quantity: number | null;
+  readonly refunded_quantity: number | null;
+} {
+  void row;
+  throw new Error('NotImplemented: jdQuantityFields');
+}

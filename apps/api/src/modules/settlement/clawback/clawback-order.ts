@@ -1326,3 +1326,38 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
 
   return Object.freeze({ apply, onUpdated });
 }
+
+/** B1-08zi：onUpdated 读到的已退件数事实（锁内重读的 orders 行）。 */
+export interface RefundQuantityFacts {
+  readonly platform: string;
+  readonly refunded_quantity: number | null;
+  readonly refunded_quantity_at_credit: number | null;
+}
+
+/**
+ * B1-08zi：已退件数这一项对 onUpdated 的作用。r9：按 R9 判定（「已退件数增加」成立）；alert_only：增加了但
+ * 开关关，不作为 R9 触发、不动钱，只写告警事件，其余判定照常（如同未增加）；none：没有增加。
+ */
+export type RefundQuantityRoute = 'r9' | 'alert_only' | 'none';
+
+/**
+ * B1-08zi（D10-814 ⑥）：增加 = (refunded_quantity ?? 0) > (refunded_quantity_at_credit ?? 0)。只有 platform
+ * jd 挂开关 orders.jd.refunded_quantity_r9_enabled：开 → r9，关 → alert_only；其他平台的增加照旧 r9。
+ */
+export function refundQuantityRoute(
+  order: RefundQuantityFacts,
+  jdR9Enabled: boolean,
+): RefundQuantityRoute {
+  void order;
+  void jdR9Enabled;
+  throw new Error('NotImplemented: refundQuantityRoute');
+}
+
+/**
+ * B1-08zi：orders.jd.refunded_quantity_r9_enabled 的读值（config.get 的返回）→ 是否开启。只有 JSON true 为开；
+ * 未设置（undefined / null）与其他任何值都是关（默认关）。
+ */
+export function jdRefundR9Enabled(value: unknown): boolean {
+  void value;
+  throw new Error('NotImplemented: jdRefundR9Enabled');
+}

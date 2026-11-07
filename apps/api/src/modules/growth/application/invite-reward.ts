@@ -56,6 +56,25 @@ export interface InviteRewardOrder {
   refunded_quantity_at_credit: number | null;
   rights_pending: boolean;
   has_rights: boolean;
+  /**
+   * B1-08zi：订单平台（orders.platform）。只有 jd 的已退件数比较挂开关 orders.jd.refunded_quantity_r9_enabled；
+   * 缺失按非京东处理（照旧比较）。
+   */
+  platform?: string | null;
+}
+
+/**
+ * B1-08zi（D10-814 ⑥，BR-INV-24 细则 判定顺序 3 ⑥）：触发订单是否已不再可发奖。rebate_status 不是 CREDITED
+ * → true；否则看已退件数 (refunded_quantity ?? 0) > (refunded_quantity_at_credit ?? 0)：platform jd 只在
+ * jdR9Enabled 时据此为 true（开关关不据此作废未发奖励），其他平台与缺失平台照旧据此为 true。
+ */
+export function inviteRewardOrderClawedBack(
+  order: InviteRewardOrder,
+  jdR9Enabled: boolean,
+): boolean {
+  void order;
+  void jdR9Enabled;
+  throw new Error('NotImplemented: inviteRewardOrderClawedBack');
 }
 
 export interface InviteRewardOrderFacts {
